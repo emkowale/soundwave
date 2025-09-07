@@ -3,3 +3,5 @@
 !includes/vendor/
 !includes/vendor/plugin-update-checker/**
 soundwave-*.zip
+
+*.zip
