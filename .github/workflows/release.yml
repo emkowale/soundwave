@@ -1,20 +1,16 @@
 name: Release
-on:
-  push:
-    tags: ['v*']
+on: { push: { tags: ['v*'] } }
+permissions: { contents: write }
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build plugin zip (soundwave/)
+      - name: Build plugin zip
         run: |
-          mkdir -p dist
-          rsync -a --delete \
-            --exclude ".git" --exclude ".github" --exclude "dist" --exclude "*.zip" \
-            ./ soundwave/
-          cd soundwave && zip -r ../dist/soundwave-${GITHUB_REF_NAME}.zip . >/dev/null
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/soundwave-${{ github.ref_name }}.zip
+          DIR="$(basename "$GITHUB_WORKSPACE")"
+          mkdir -p dist "$DIR"
+          rsync -a --delete --exclude ".git" --exclude ".github" --exclude "dist" --exclude "*.zip" ./ "./$DIR/"
+          (cd "$DIR" && zip -r "../dist/${DIR}-${GITHUB_REF_NAME}.zip" . > /dev/null)
+      - uses: softprops/action-gh-release@v2
+        with: { files: dist/*.zip }
