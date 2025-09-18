@@ -3,7 +3,7 @@
  * Plugin Name: Soundwave
  * Plugin URI: https://github.com/emkowale/soundwave
  * Description: Pushes WooCommerce orders from affiliate sites to thebeartraxs.com for production.
- * Version: 1.1.16
+ * Version: 1.1.17
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * Author: Eric Kowalewski
@@ -29,7 +29,7 @@ if (is_readable($_sw_puc)) {
     if ($api = $_sw_uc->getVcsApi()) $api->enableReleaseAssets();
 }
 
-define('SOUNDWAVE_VERSION', '1.1.16');
+define('SOUNDWAVE_VERSION', '1.1.17');
 define('SOUNDWAVE_PATH', plugin_dir_path(__FILE__));
 define('SOUNDWAVE_URL', plugin_dir_url(__FILE__));
 
