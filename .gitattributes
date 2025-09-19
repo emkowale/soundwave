@@ -1,0 +1,6 @@
+/.*          export-ignore
+/.github/    export-ignore
+/backup_*/   export-ignore
+/release.sh  export-ignore
+/tests/      export-ignore
+/*.md        export-ignore
