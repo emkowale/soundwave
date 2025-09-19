@@ -36,8 +36,7 @@ define('SOUNDWAVE_URL', plugin_dir_url(__FILE__));
 /* CSS with version cache-buster */
 /*add_action('wp_enqueue_scripts', function () {
     wp_enqueue_style('soundwave', plugin_dir_url(__FILE__).'style.css', [], SOUNDWAVE_VERSION);
-});
-*/
+});*/
 
 require_once SOUNDWAVE_PATH . 'includes/bootstrap.php';
 
@@ -48,9 +47,9 @@ add_filter('plugin_action_links_' . plugin_basename(__FILE__), function($links) 
     return $links;
 });
 
-
-
-
-
-
 require_once SOUNDWAVE_PATH . 'includes/receiver/honor_totals.php';
+
+/** Add-only: ensure Soundwave orders land in Analytics correctly */
+if (is_readable(SOUNDWAVE_PATH . 'includes/analytics/analytics-guard.php')) {
+    require_once SOUNDWAVE_PATH . 'includes/analytics/analytics-guard.php';
+}
