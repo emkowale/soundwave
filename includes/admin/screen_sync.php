@@ -1,94 +1,85 @@
 <?php
-defined('ABSPATH') || exit;
+/*
+ * File: /includes/admin/screen_sync.php
+ * Purpose: Soundwave Dashboard — Missing/Synced + Sync Now (hard-coded creds, strict check).
+ */
+if (!defined('ABSPATH')) exit;
 
-function soundwave_render_sync_screen() {
-    if (!class_exists('WooCommerce')) {
-        echo '<div class="notice notice-error"><p><strong>WooCommerce is not active.</strong></p></div>';
-        return;
-    }
-
-    // Toggle: Show Debug on order screen (default OFF)
-    if (!empty($_POST['sw_debug_toggle'])) {
-        check_admin_referer('sw_debug_toggle');
-        update_option('soundwave_debug_enabled', isset($_POST['sw_debug_enabled']) ? '1' : '0');
-        echo '<div class="notice notice-success is-dismissible"><p>Soundwave Debug is now ' .
-            (get_option('soundwave_debug_enabled','0') === '1' ? 'enabled' : 'disabled') . '.</p></div>';
-    }
-
-    // Health check: test hub connectivity + show last success + current settings
-    $hc_status = 'Disconnected';
-    $hc_detail = '';
-    $code = 0;
-
-    $ep = rtrim(SW_HUB_ENDPOINT, '/'); // usually .../orders
-    $test_url = add_query_arg('per_page', '1', $ep);
-    $resp = wp_remote_request($test_url, [
-        'method'  => 'GET',
-        'headers' => ['Authorization' => 'Basic ' . base64_encode(SW_HUB_KEY . ':' . SW_HUB_SECRET)],
-        'timeout' => 10,
-    ]);
-    if (is_wp_error($resp)) {
-        $hc_detail = esc_html($resp->get_error_message());
-    } else {
-        $code = intval(wp_remote_retrieve_response_code($resp));
-        if ($code >= 200 && $code < 300) { $hc_status = 'Connected'; }
-        else { $hc_detail = 'HTTP ' . $code; }
-    }
-
-    // Last success time across recent orders
-    $orders = wc_get_orders(['limit'=>10,'orderby'=>'date','order'=>'DESC']);
-    $last_ok = '';
-    foreach ($orders as $o) {
-        if (get_post_meta($o->get_id(), SW_META_STATUS, true) === 'success') {
-            $last_ok = get_post_meta($o->get_id(), SW_META_LAST_AT, true);
-            if ($last_ok) break;
-        }
-    }
-
-    $debug_on = get_option('soundwave_debug_enabled', '0') === '1';
-
-    echo '<div class="wrap"><h1>Soundwave — Manual Order Sync</h1>';
-    echo '<div class="notice" style="padding:12px;margin:12px 0;border-left:4px solid '.($hc_status==='Connected'?'#46b450':'#d63638').'">';
-    echo '<strong>Health Check:</strong> '.$hc_status;
-    if ($hc_detail) echo ' &middot; <span style="color:#646970">'.$hc_detail.'</span>';
-    if ($last_ok) echo '<br><span style="color:#646970">Last successful sync: '.esc_html($last_ok).'</span>';
-    echo '<br><span style="color:#646970">Debug panel: '.($debug_on?'ON':'OFF').'</span>';
-    echo '</div>';
-
-    // Debug checkbox UI
-    echo '<form method="post" style="margin:12px 0 20px">';
-    wp_nonce_field('sw_debug_toggle');
-    echo '<label><input type="checkbox" name="sw_debug_enabled" value="1" ' . checked($debug_on, true, false) . '> Show Debug on order screen</label> ';
-    echo '<input type="hidden" name="sw_debug_toggle" value="1">';
-    echo '<button class="button">Save</button>';
-    echo '</form>';
-
-    if (empty($orders)) { echo '<p>No orders found.</p></div>'; return; }
-
-    echo '<table class="widefat striped"><thead><tr>';
-    echo '<th>Order</th><th>Date</th><th>Total</th><th>Status</th><th>Action</th></tr></thead><tbody>';
-
-    foreach ($orders as $order) {
-        $order_id  = $order->get_id();
-        $is_synced = (get_post_meta($order_id, SW_META_STATUS, true) === 'success');
-        $edit_url  = admin_url('post.php?post=' . $order_id . '&action=edit');
-
-        echo '<tr>';
-        echo '<td>#' . esc_html($order_id) . '</td>';
-        echo '<td>' . esc_html($order->get_date_created()->date('Y-m-d H:i')) . '</td>';
-        echo '<td>' . wp_kses_post(wc_price($order->get_total())) . '</td>';
-        echo '<td>' . sw_status_label($order_id) . '</td>';
-        echo '<td><form method="post" style="display:inline;">';
-        wp_nonce_field('sw_manual_sync');
-        echo '<input type="hidden" name="sw_sync_order_id" value="' . esc_attr($order_id) . '">';
-        if ($is_synced) {
-            echo '<button type="button" class="button" disabled>Synced</button> ';
-        } else {
-            echo '<button type="submit" class="button button-primary" name="sw_manual_sync_submit" value="1">Sync</button> ';
-        }
-        echo '<a class="button" href="' . esc_url($edit_url) . '">View</a>';
-        echo '</form></td></tr>';
-    }
-
-    echo '</tbody></table></div>';
+if (!function_exists('soundwave_render_sync_screen')) {
+  function soundwave_render_sync_screen(){ soundwave_screen_sync(); }
 }
+
+if (!function_exists('soundwave_screen_sync')) {
+function soundwave_screen_sync() {
+  if (!current_user_can('manage_woocommerce')) wp_die('Insufficient permissions.');
+
+  // Hard-coded destination creds
+  $cfg = dirname(__DIR__).'/util/config.php'; if (file_exists($cfg)) require_once $cfg;
+  $base = defined('SW_DEST_BASE')?SW_DEST_BASE:''; $ck = defined('SW_DEST_CK')?SW_DEST_CK:''; $cs = defined('SW_DEST_CS')?SW_DEST_CS:'';
+  $cfg_ok = ($base && $ck && $cs);
+
+  echo '<div class="wrap"><h1>Soundwave — Manual Order Sync</h1>';
+  echo '<div class="notice '.($cfg_ok?'notice-success':'notice-error').'"><p><strong>'
+      .($cfg_ok?'Connected':'Destination credentials missing').'</strong> • Destination: '
+      .esc_html($base?:'(unset)').'</p></div>';
+  if (!$cfg_ok){ echo '</div>'; return; }
+
+  // Debug banner (modular)
+  require_once __DIR__ . '/debug_banner.php';
+  sw_render_debug_banner($base);
+
+  if (!class_exists('Soundwave_Dest_Client')) require_once dirname(__DIR__).'/class-soundwave-dest-client.php';
+  $client = new Soundwave_Dest_Client($base,$ck,$cs);
+
+  $q = wc_get_orders(['limit'=>20,'paginate'=>true,'paged'=>max(1,intval($_GET['paged']??1)),
+    'orderby'=>'date','order'=>'DESC','type'=>'shop_order','return'=>'objects']);
+  $orders = $q->orders ?? [];
+
+  echo '<table class="widefat striped"><thead><tr><th>Order</th><th>Date</th><th>Total</th><th>Status</th><th>Action</th></tr></thead><tbody>';
+
+  foreach ($orders as $o) {
+    $id=$o->get_id(); $num=$o->get_order_number();
+    $when=$o->get_date_created()? $o->get_date_created()->date_i18n(get_option('date_format').' '.get_option('time_format')):'—';
+    $tot=$o->get_formatted_order_total();
+
+    // Flash once after redirect
+    $just=(bool)get_transient('sw_synced_'.$id); if($just) delete_transient('sw_synced_'.$id);
+
+    // Live existence (exact id; if deleted, drop id; else strict key/number and learn id)
+    $dest_id=(int)get_post_meta($id,'_sw_dest_order_id',true);
+    $exists_live=false;
+    if ($dest_id>0){
+      $exists_live = $client->exists_by_id($dest_id);
+      if(!$exists_live) delete_post_meta($id,'_sw_dest_order_id');
+    }
+    if (!$exists_live){
+      list($exists_live,$found_id) = $client->exists_by_key_or_number_strict($o->get_order_key(), $num);
+      if ($exists_live && $found_id>0) update_post_meta($id,'_sw_dest_order_id',(int)$found_id);
+    }
+
+    $exists = $exists_live || $just;
+
+    $status = $exists ? '<span style="color:#2e7d32;">&#10003; Synced</span>'
+                      : '<span style="color:#b71c1c;">&#9888; Missing</span>';
+
+    $edit = admin_url("post.php?post={$id}&action=edit");
+    $nonce = wp_create_nonce('soundwave_manual_sync_'.$id);
+    $post_url = admin_url('admin-post.php');
+    $action = $exists
+      ? '<button class="button" disabled>Synced</button>'
+      : '<form method="post" action="'.esc_url($post_url).'" style="display:inline">'
+        .'<input type="hidden" name="action" value="soundwave_manual_sync"/>'
+        .'<input type="hidden" name="order_id" value="'.esc_attr($id).'"/>'
+        .'<input type="hidden" name="_wpnonce" value="'.esc_attr($nonce).'"/>'
+        .'<button class="button button-primary">Sync Now</button></form>';
+
+    echo '<tr><td><a href="'.esc_url($edit).'">#'.esc_html($num).'</a></td>'
+       . '<td>'.esc_html($when).'</td>'
+       . '<td>'.wp_kses_post($tot).'</td>'
+       . '<td>'.$status.'</td>'
+       . '<td>'.$action.' <a class="button" href="'.esc_url($edit).'">View</a></td></tr>';
+  }
+
+  if (empty($orders)) echo '<tr><td colspan="5">No orders found.</td></tr>';
+  echo '</tbody></table></div>';
+}}

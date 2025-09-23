@@ -29,7 +29,3 @@ require_once __DIR__ . '/sync/line_builder_custom.php';
 require_once __DIR__ . '/sync/payload_compose.php';
 require_once __DIR__ . '/sync/http_send.php';
 require_once __DIR__ . '/sync/record_status.php';
-// Load Manual Order Sync admin screen
-if ( is_admin() ) {
-    require_once plugin_dir_path(__FILE__) . 'class-soundwave-admin-manual-sync.php';
-}

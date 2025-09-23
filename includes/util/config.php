@@ -22,3 +22,7 @@ if (!defined('SW_META_LAST_AT')) define('SW_META_LAST_AT', '_soundwave_last_sync
 if (!defined('SW_META_HTTP_CODE')) define('SW_META_HTTP_CODE', '_soundwave_last_response_code');
 if (!defined('SW_META_HTTP_BODY')) define('SW_META_HTTP_BODY', '_soundwave_last_response_body');
 if (!defined('SW_META_LAST_ERR')) define('SW_META_LAST_ERR', '_soundwave_last_error');
+
+define('SW_DEST_BASE', 'https://thebeartraxs.com');
+define('SW_DEST_CK',   'ck_4a31310d973ac0d46c85e47ce70cdfa22f5ad794'); // ← replace if needed
+define('SW_DEST_CS',   'cs_a04ab86297d7b91b0c826c84982bd4119bfb5aeb');  // ← replace
