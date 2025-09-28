@@ -53,3 +53,12 @@ require_once SOUNDWAVE_PATH . 'includes/receiver/honor_totals.php';
 if (is_readable(SOUNDWAVE_PATH . 'includes/analytics/analytics-guard.php')) {
     require_once SOUNDWAVE_PATH . 'includes/analytics/analytics-guard.php';
 }
+
+// --- Soundwave: Order Sync column + AJAX + auto-push ---
+require_once __DIR__ . '/includes/admin/class-sw-order-sync-column.php';
+require_once __DIR__ . '/includes/admin/class-sw-order-sync-ajax.php';
+require_once __DIR__ . '/includes/hooks/class-sw-auto-push.php';
+require_once __DIR__ . '/includes/bridges/class-sw-sync-bridge.php';
+require_once __DIR__ . '/includes/admin/class-sw-sync-status-ajax.php';
+require_once __DIR__ . '/includes/remote/class-sw-remote-status.php';
+require_once __DIR__ . '/includes/sync/class-sw-preflight.php';

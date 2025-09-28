@@ -1,78 +1,91 @@
 <?php
-defined('ABSPATH') || exit;
+/*
+ * File: includes/sync/dispatcher.php
+ * Purpose: Canonical per-order sync (no Woo hooks here).
+ *          Compose payload (supports either signature), inject product_image_full,
+ *          send, and record success locally if no recorder helper is present.
+ */
+if (!defined('ABSPATH')) exit;
 
-/* Hook into Woo events */
-add_action('woocommerce_new_order', function($order_id){
-    soundwave_sync_order_to_beartraxs($order_id, false);
-}, 20);
-add_action('woocommerce_payment_complete', function($order_id){
-    soundwave_sync_order_to_beartraxs($order_id, false);
-}, 20);
+if (!function_exists('soundwave_sync_order_to_beartraxs')) {
+    function soundwave_sync_order_to_beartraxs($order_id, $ctx = []) {
+        $order_id = (int) $order_id;
+        $ctx      = (array) $ctx;
 
-/* Core sync entry */
-function soundwave_sync_order_to_beartraxs($order_id, $force = false) {
-    $order = wc_get_order($order_id);
-    if (!$order) return;
+        // Ensure we have an order object handy
+        $order = wc_get_order($order_id);
+        if (!$order) return new WP_Error('soundwave_no_order', 'Order not found.');
 
-    if (SW_SKIP_ON_SUCCESS && !$force && get_post_meta($order_id, SW_META_STATUS, true) === 'success') return;
+        // 1) Compose payload (support both old/new function signatures)
+        $compose = __DIR__ . '/payload_compose.php';
+        if (is_readable($compose)) require_once $compose;
+        if (!function_exists('sw_compose_payload')) {
+            return new WP_Error('soundwave_missing_compose', 'Composer not found (sw_compose_payload).');
+        }
 
-    // Validate
-    $validation = sw_validate_order($order);
-    if (!empty($validation['ok']) && $validation['ok'] === false) {
-        sw_update_order_meta($order_id, [
-            SW_META_STATUS   => 'failed',
-            SW_META_LAST_AT  => current_time('mysql'),
-            SW_META_LAST_ERR => (string) ($validation['reason'] ?? 'invalid'),
-        ]);
-        return;
-    }
+        try {
+            $rf = new ReflectionFunction('sw_compose_payload');
+            if ($rf->getNumberOfParameters() >= 2) {
+                // Newer signature: (int $order_id, array $ctx)
+                $payload = sw_compose_payload($order_id, $ctx);
+            } else {
+                // Older signature: (WC_Order $order)
+                $payload = sw_compose_payload($order);
+            }
+        } catch (Throwable $e) {
+            return new WP_Error('soundwave_compose_error', $e->getMessage());
+        }
+        if (is_wp_error($payload)) return $payload;
 
-    // Compose + debug snapshot
-    $payload = sw_compose_payload($order);
-    sw_update_order_meta($order_id, [
-        SW_META_DEBUG_JSON => sw_json_encode($payload),
-        SW_META_LAST_AT    => current_time('mysql'),
-    ]);
-    update_option('sw_last_payload', $payload);
+        // 2) Enrich with product_image_full (auto-derived) — never fatal
+        $__img_helper = __DIR__ . '/helpers/product-image.php';
+        if (is_readable($__img_helper)) {
+            require_once $__img_helper;
+            if (function_exists('sw_enrich_payload_with_image')) {
+                $payload = sw_enrich_payload_with_image($payload, $order_id);
+            }
+        } else {
+            error_log('Soundwave: missing helper ' . $__img_helper);
+        }
 
-    // Send
-    $resp = sw_http_send($payload);
+        // 3) Send to destination
+        $http = __DIR__ . '/http_send.php';
+        if (is_readable($http)) require_once $http;
+        if (!function_exists('sw_http_send')) {
+            return new WP_Error('soundwave_missing_http', 'HTTP sender not found (sw_http_send).');
+        }
+        try {
+            $resp = sw_http_send($payload, $ctx);
+        } catch (Throwable $e) {
+            return new WP_Error('soundwave_http_error', $e->getMessage());
+        }
+        if (is_wp_error($resp)) return $resp;
 
-    // Transport error?
-    if (is_wp_error($resp['raw'])) {
-        $msg = $resp['raw']->get_error_message();
-        update_option('sw_last_response', 'WP_Error: '.$msg);
-        sw_update_order_meta($order_id, [
-            SW_META_STATUS   => 'failed',
-            SW_META_LAST_ERR => $msg,
-        ]);
-        return;
-    }
+        // 4) Record status
+        $remote_id = '';
+        if (is_array($resp)) {
+            foreach (['remote_id','id','order_id','dest_order_id'] as $k) {
+                if (!empty($resp[$k])) { $remote_id = (string) $resp[$k]; break; }
+            }
+        }
+        if (!$remote_id) {
+            $maybe = get_post_meta($order_id, '_soundwave_dest_order_id', true);
+            if ($maybe) $remote_id = (string) $maybe;
+        }
 
-    // Save HTTP echo for banner/debug
-    sw_update_order_meta($order_id, [
-        SW_META_HTTP_CODE => (int) $resp['code'],
-        SW_META_HTTP_BODY => (string) $resp['body'],
-    ]);
-    update_option('sw_last_response', $resp['body']);
+        // Prefer helper if present; otherwise record locally (so we never error out)
+        $rec = __DIR__ . '/record_status.php';
+        if (is_readable($rec)) require_once $rec;
+        if (function_exists('sw_record_status')) {
+            $out = sw_record_status($order_id, $resp, $ctx);
+            if (is_wp_error($out)) return $out;
+        } else {
+            if ($remote_id) update_post_meta($order_id, '_soundwave_dest_order_id', $remote_id);
+            update_post_meta($order_id, '_soundwave_synced', 'yes');
+            delete_post_meta($order_id, '_soundwave_last_error');
+            $order->add_order_note('Soundwave: Synced successfully' . ($remote_id ? " (remote #{$remote_id})" : '') . '.');
+        }
 
-    // Parse JSON body (to capture destination order id, etc.)
-    $body = json_decode((string) $resp['body'], true);
-    if (is_array($body) && !empty($body['id'])) {
-        update_post_meta($order_id, '_sw_dest_order_id', (int) $body['id']);
-    }
-
-    if ($resp['code'] >= 200 && $resp['code'] < 300) {
-        sw_update_order_meta($order_id, [
-            SW_META_STATUS   => 'success',
-            SW_META_LAST_ERR => '',
-        ]);
-        update_option('sw_last_sync_ok_ts', time());
-    } else {
-        $msg = $resp['code'].' '.substr($resp['body'], 0, 400);
-        sw_update_order_meta($order_id, [
-            SW_META_STATUS   => 'failed',
-            SW_META_LAST_ERR => $msg,
-        ]);
+        return ['ok' => true, 'remote_id' => $remote_id];
     }
 }

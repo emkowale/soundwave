@@ -25,9 +25,7 @@ if (!function_exists('sw_render_debug_banner')) {
     $last_txt   = $last_ts ? date_i18n(get_option('date_format').' '.get_option('time_format'), $last_ts) : 'never';
     $post       = esc_url(admin_url('admin-post.php'));
 
-    echo '<div class="notice notice-info" style="margin-top:10px;"><p><strong>Health Check:</strong> '
-       . 'Connected &middot; Destination: '.esc_html($dest_base).'</p>'
-       . '<p><strong>Last successful sync:</strong> '.esc_html($last_txt).'</p>'
+    echo '<div class="notice notice-info" style="margin-top:10px;">'
        . '<form method="post" action="'.$post.'">';
     wp_nonce_field('sw_debug_pref');
     echo '<input type="hidden" name="action" value="sw_debug_pref"/>'

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Usage: release.sh [patch|minor|major]
+# Usage: release.sh [patch|minor|major] [release notes...]
 set -euo pipefail
 
-usage(){ echo "Usage: $(basename "$0") [patch|minor|major]"; exit 2; }
-[[ $# -eq 1 ]] || usage
-BUMP="$1"; [[ "$BUMP" =~ ^(patch|minor|major)$ ]] || usage
+usage(){ echo "Usage: $(basename "$0") [patch|minor|major] [release notes...]"; exit 2; }
+[[ $# -ge 1 ]] || usage
+BUMP="$1"; shift || true
+[[ "$BUMP" =~ ^(patch|minor|major)$ ]] || usage
+NOTES_IN="${*:-}"
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT_DIR"
@@ -29,7 +31,7 @@ if [[ -n "$(git status --porcelain)" ]]; then
   git commit -m "chore: pre-release snapshot"
 fi
 
-# Detect current version from header or constant
+# Detect current version
 CURV="$(grep -Eo '^\s*\*\s*Version:\s*[0-9]+\.[0-9]+\.[0-9]+' "$FILE" | awk '{print $3}' || true)"
 [[ -n "$CURV" ]] || CURV="$(grep -Eo "SOUNDWAVE_VERSION'.*'([0-9]+\.[0-9]+\.[0-9]+)'" "$FILE" | sed -E "s/.*'([0-9]+\.[0-9]+\.[0-9]+)'.*/\1/")"
 [[ -n "$CURV" ]] || { echo "❌ Could not detect current version"; exit 1; }
@@ -47,6 +49,31 @@ echo "ℹ️  Bumping $CURV → $NEWV"
 sed -i -E "s/^(\s*\*\s*Version:\s*)[0-9]+\.[0-9]+\.[0-9]+/\1${NEWV}/" "$FILE"
 sed -i -E "s/(SOUNDWAVE_VERSION'\s*,\s*')[0-9]+\.[0-9]+\.[0-9]+(')/\1${NEWV}\2/" "$FILE"
 
+# Prepare release notes
+if [[ -n "$NOTES_IN" ]]; then
+  NOTES="$NOTES_IN"
+else
+  LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo "")"
+  if [[ -n "$LAST_TAG" ]]; then
+    NOTES="$(git log --pretty=format:'- %s' "${LAST_TAG}..HEAD")"
+  else
+    NOTES="$(git log --pretty=format:'- %s')"
+  fi
+  [[ -z "$NOTES" ]] && NOTES="- Internal changes."
+fi
+
+# Prepend CHANGELOG.md (Keep a Changelog style)
+DATE="$(date +%Y-%m-%d)"
+TMPFILE="$(mktemp)"
+{
+  echo "## [$NEWV] - $DATE"
+  echo
+  echo "$NOTES"
+  echo
+  [[ -f CHANGELOG.md ]] && cat CHANGELOG.md
+} > "$TMPFILE"
+mv "$TMPFILE" CHANGELOG.md
+
 # Ensure .gitattributes exists (export-clean)
 if [[ ! -f .gitattributes ]]; then
   cat > .gitattributes <<'EOF'
@@ -60,11 +87,14 @@ if [[ ! -f .gitattributes ]]; then
 EOF
 fi
 
-git add "$FILE" .gitattributes
+git add "$FILE" .gitattributes CHANGELOG.md
 git commit -m "release: v${NEWV}"
-git tag -a "v${NEWV}" -m "v${NEWV}"
 
-# Build WP-safe zip: rooted at soundwave/
+# Tag
+git tag -a "v${NEWV}" -m "v${NEWV}"
+echo "🏷  Tagged v${NEWV}"
+
+# Build WP-safe zip rooted at soundwave/
 ZIP="soundwave-v${NEWV}.zip"
 git archive --format=zip --prefix=soundwave/ -o "$ZIP" HEAD
 echo "📦 Built $ZIP"
@@ -79,13 +109,16 @@ echo "✅ Zip rooted at soundwave/"
 git push origin HEAD:main --tags
 echo "✅ Pushed main and tag v${NEWV}"
 
-# Upload to GitHub Release if gh present
+# Create/upload GitHub Release with notes
 if command -v gh >/dev/null 2>&1; then
-  gh release view "v${NEWV}" >/dev/null 2>&1 || gh release create "v${NEWV}" --title "v${NEWV}" --notes "Release ${NEWV}"
+  gh release view "v${NEWV}" >/dev/null 2>&1 || \
+  gh release create "v${NEWV}" "$ZIP" --title "Soundwave v${NEWV}" --notes "$NOTES"
+  # If release exists already, ensure asset is attached/updated
   gh release upload "v${NEWV}" "$ZIP" --clobber
   echo "✅ Uploaded $ZIP to GitHub release v${NEWV}"
 else
   echo "ℹ️  Install GitHub CLI (gh) to auto-upload asset, or upload $ZIP manually."
 fi
 
+echo "📝 CHANGELOG.md updated."
 echo "🎉 Done. Version v${NEWV} is ready."
