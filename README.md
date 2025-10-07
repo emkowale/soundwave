@@ -1,98 +1,213 @@
-# Soundwave
+Soundwave — Order Relay (Affiliate ➜ thebeartraxs.com)
 
-![WordPress](https://img.shields.io/badge/WordPress-Plugin-blue?logo=wordpress&logoColor=white)
-![WooCommerce](https://img.shields.io/badge/WooCommerce-Sync-purple?logo=woocommerce&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.1.10-brightgreen)
-![License](https://img.shields.io/badge/license-GPL--2.0+-orange)
+Purpose: Push WooCommerce orders from affiliate sites (“sources”) to thebeartraxs.com (“hub”) with the exact item-level metadata required for production and WooCommerce Analytics—while keeping the codebase modular and predictable (≤100 lines per file).
 
----
+High-Level Flow
 
-## 📌 Overview
+Source (affiliate)
 
-**Soundwave** is a custom WooCommerce plugin that automatically **syncs orders from one WordPress site to another**.  
-It’s designed for affiliate/subscription sites that forward orders to a central hub (e.g., **thebeartraxs.com**) for fulfillment.
+Detect “new/changed” orders.
 
----
+Build the data contract (below) per order and per line item.
 
-## ✨ Features
+POST to hub (Woo REST, authenticated).
 
-- 🔄 **Automatic Order Sync** – new orders push instantly to the destination site  
-- 🖥 **Admin Dashboard** – manage settings & view sync logs in WordPress admin  
-- ✅ **Manual Sync Button** – retry syncs from the order list  
-- 🚫 **Duplicate Protection** – prevents syncing the same order twice  
-- 📦 **Full Order Data** – products, SKUs, images, quantities, descriptions  
-- 👤 **Customer Info** – transfers customer name, email, and address  
-- 💬 **Order Notes & Coupons** – included in the sync  
-- 📧 **Email Triggers** – synced orders trigger destination WooCommerce emails  
-- 🔁 **Retry System** – failed syncs stay queued until successful  
+Mark as synced (idempotency), retry on failure with bounded backoff.
 
----
+Hub (thebeartraxs.com)
 
-## ⚙️ Installation
+Create/update the order using the original created date.
 
-1. Download the latest release zip (e.g., `soundwave-v1.1.10.zip`).
-2. Go to **Plugins → Add New → Upload Plugin** in WordPress admin.
-3. Upload and install the zip file.
-4. Click **Activate Plugin**.
-5. The **Soundwave** menu will now appear in your sidebar.
+Persist line-item meta exactly as sent (no renaming on save).
 
----
+Admin/Email display helpers enforce meta order and render thumbnails from product_image_full.
 
-## 🛠 Configuration
+Data Contract (Per Line Item)
 
-1. Go to **Soundwave → Settings**.  
-2. Enter your **Destination Site URL**.  
-3. Add your **API keys** from the destination site.  
-4. Save changes — you’re ready to sync.  
+Every line item must include these visible fields (in addition to Woo standard fields):
 
----
+Color (string)
 
-## 🚀 Usage
+Size (string)
 
-- New WooCommerce orders are synced automatically.  
-- Manual sync is available in **WooCommerce → Orders**.  
-- Synced orders show as **completed** and can’t be retried manually.  
+Print Location (string; e.g., “Front”, “Back”, “Left Chest”)
+Hub display maps common alias keys to this label.
 
----
+Quality (string)
 
-## 📂 File Structure
+company-name (string) — the affiliate site’s WordPress Site Title
 
-soundwave/
-├── soundwave.php # Main plugin loader
-├── includes/
-│ ├── soundwave-sync.php # Order sync logic
-│ ├── soundwave-admin.php # Admin dashboard & settings
-│ ├── email-render-handler.php # Email behavior on sync
-│ └── remove-email-product-image.php # Adjusts WooCommerce email images
-└── assets/
-├── css/ # Admin styles
-└── js/ # Admin scripts
+product_image_full (string; URL to image; direct URL preferred; link OK—hub extracts href)
 
+original-art (string; newline-separated list of URLs; hub displays all URLs)
 
----
+Display Labels in Hub Admin/Emails
 
-## 📝 Changelog
+company-name → Company Name
 
-### v1.1.10
-- Disabled manual sync button for already-synced orders  
-- Fixed duplication issues during sync  
-- Improved handling of SKU, images, quantity, and customer info  
+product_image_full → Product Image
 
-### v1.1.9
-- Added retry system for failed syncs  
-- Added admin sync status feedback  
-- Triggered WooCommerce emails on destination site  
+original-art → Original Art (each URL shown)
 
----
+Multi-Item Guarantee
 
-## 🤝 Contributing
+Multi-line-item orders carry the full meta set per line. No values are stored only at the order level.
 
-Pull requests are welcome!  
-Fork the repo, create a feature branch, and open a PR.
+Meta Display Order (Hub)
 
----
+When viewing an order item on the hub, meta must appear in this order, then all other meta:
 
-## 📄 License
+Color
 
-Licensed under the **GPL-2.0+** license.  
-You may freely modify and redistribute under the same terms.
+Size
+
+Print Location
+
+Quality
+
+Company Name
+
+Product Image
+
+Original Art
+
+(all other meta unchanged)
+
+Thumbnails (Hub)
+
+Admin & emails show the thumbnail from product_image_full.
+
+If product_image_full is stored as a clickable link (<a href="…">), hub extracts the href.
+
+If missing/invalid, fallback to the product’s featured image.
+
+Single authority: one hub display helper controls thumbnails to prevent “code stepping on code.”
+
+Created Date & WooCommerce Analytics (including Stock)
+
+Hub order must use the original source created timestamp:
+
+Set both date_created and date_created_gmt to the source’s order time.
+
+Move the order to a stock-reducing status (e.g., processing or completed).
+
+Product mapping is required so stock analytics update correctly:
+
+Each line item must include sku (prefer variation SKU).
+
+Hub resolves SKU → product_id / variation_id and sets them on the line item before save.
+
+Products on hub must have “Manage stock” enabled where relevant.
+
+Order-level audit meta (hub): _sw_source_site, _sw_source_order_id, _sw_original_created (ISO8601), optional _sw_idempotency_key.
+
+Idempotency & Duplicates
+
+Each source order syncs exactly once.
+
+Idempotency key (order-level):
+idempotency_key = {source_site_slug}:{source_order_id} (e.g., vicki-biz:38492)
+
+Do NOT use SKU for idempotency (SKU is line-item scope and repeats across orders).
+
+Hub behavior:
+
+If _sw_idempotency_key already exists, update/append items safely (idempotent re-push) and do not create a duplicate order.
+
+Otherwise, create the order once and store _sw_idempotency_key, _sw_source_site, _sw_source_order_id, _sw_sync_status.
+
+Repository Principles
+
+≤ 100 lines per file. Split before you exceed ~100 lines to keep diffs small and reviews fast.
+
+Single place per concern: one idempotency gate, one thumbnail filter, one meta-order filter.
+
+Boundaries:
+
+Source (Soundwave plugin): order detection, mapping, auth, POST, retries, data contract integrity.
+
+Hub (thebeartraxs.com): order creation with original dates, SKU→product mapping, stock-reducing status, and display rules (meta order + thumbnails).
+
+No mu-plugins on hub per team preference; hub helpers live in the active child theme or designated include (still ≤100 lines).
+
+Acceptance Tests (5-Minute Checklist)
+
+A. Single-item order
+
+ Line item shows the seven required fields with the labels above, in order.
+
+ Thumbnail shows from Product Image or falls back to product image.
+
+ Hub order’s Created equals the source order’s original time; status reduces stock; Analytics → Stock reflects the item.
+
+B. Multi-item order
+
+ Each line item has its own full meta set and its own thumbnail.
+
+ All items resolve SKUs to hub products/variations; stock reduces per item.
+
+C. Idempotency
+
+ Re-push with the same {site}:{order_id} updates safely; no duplicate orders.
+
+D. Labels & aliasing
+
+ Attribute-style keys for Print Location (e.g., pa_print-location, print_location) display as Print Location and sit right under Size.
+
+Troubleshooting Quick Checks
+
+Missing thumbnail → Confirm product_image_full is a URL or a link with href.
+
+Print Location in wrong place → Confirm hub meta-order helper is active; check raw keys against alias list.
+
+Analytics/Stock off → Verify date_created is the original time, item is attached to a real product/variation via SKU, and status reduces stock.
+
+Duplicate hub orders → Confirm idempotency key handling and that _sw_idempotency_key is stored/checked.
+
+Security
+
+Use Woo REST authentication (server-to-server).
+
+Keep keys out of the repo; load from constants/env.
+
+Send only what’s required.
+
+Change Policy (to avoid complexity creep)
+
+No new features without updating this README’s Data Contract, Acceptance Tests, and Boundaries first.
+
+If a change can’t be explained here in ~3 lines, split it or rethink it.
+
+Keep each file ≤100 lines; if you must exceed, split before committing.
+
+Known Aliases (Hub Display)
+
+Print Location visible label is applied if raw keys are (case-insensitive):
+
+print_location, print-location
+
+pa_print-location, attribute_pa_print-location
+
+pa_print_location, attribute_pa_print_location
+
+Open Questions / To Confirm
+
+Do we also want order-level “Company Name” for filtering/reporting (in addition to line items)?
+
+Retry cadence and max attempts on the source (document defaults).
+
+Any additional non-required meta we consistently pass and should document?
+
+TL;DR
+
+Soundwave sends 7 required line-item fields (Color, Size, Print Location, Quality, company-name, product_image_full, original-art).
+
+company-name is the affiliate’s WordPress Site Title; labels in hub are Company Name, Product Image, and Original Art.
+
+Original Art accepts newline-separated URLs only; hub displays all.
+
+Hub preserves original created date, maps SKU → product/variation, reduces stock, and shows thumbnails from Product Image.
+
+Meta order is deterministic; files remain ≤100 lines; each side owns its layer.
+
+Ship only after Acceptance Tests pass.
