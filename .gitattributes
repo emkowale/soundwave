@@ -4,3 +4,4 @@
 /release.sh  export-ignore
 /tests/      export-ignore
 /*.md        export-ignore
+README.md merge=ours
