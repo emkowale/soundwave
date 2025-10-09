@@ -1,65 +1,37 @@
-/*
- * File: assets/js/sw-admin-sync.js
- * Description: One-click "Sync" + on-load batch status check for visible orders.
- * Plugin: Soundwave (WooCommerce Order Sync)
- * Version: 1.2.0
- * Last Updated: 2025-09-27 22:05 EDT
- */
-jQuery(function ($) {
-  function setBusy($btn, $status, busy) {
-    $btn.prop('disabled', !!busy);
-    if ($status && window.SW_SYNC && SW_SYNC.i18n) $status.text(busy ? SW_SYNC.i18n.busy : '');
+(function () {
+  "use strict";
+
+  function rows() {
+    return document.querySelectorAll('[data-order_item_id], tr.item, .wc-order-item');
   }
-
-  // --- On-load: check statuses for orders on THIS page only (those showing a Sync button) ---
-  (function batchCheck() {
-    const $btns = $('.sw-sync-btn');
-    if (!$btns.length) return;
-    const ids = [...new Set($btns.map((i, el) => $(el).data('order')).get())];
-    const nonce = $btns.first().data('nonce'); // reuse the per-row nonce
-
-    $.post(SW_SYNC.ajax, { action: 'sw_check_order_sync_status', order_ids: ids, nonce })
-      .done(res => {
-        if (!res || !res.success || !res.data || !res.data.statuses) return;
-        const statuses = res.data.statuses;
-        Object.keys(statuses).forEach(id => {
-          if (statuses[id]) {
-            const $b = $('.sw-sync-btn[data-order="' + id + '"]');
-            const $cell = $b.closest('td');
-            $cell.find('.sw-sync-actions, .sw-sync-status').remove();
-            $cell.append('<span style="color:#1a7f37;font-weight:600;">' + (SW_SYNC.i18n ? SW_SYNC.i18n.ok : 'Synced') + '</span>');
-          }
-        });
-      })
-      .fail(err => console.error('Soundwave status check failed:', err));
-  })();
-
-  // --- Click: manual Sync from Orders list ---
-  $(document).on('click', '.sw-sync-btn', async function (e) {
-    e.preventDefault();
-    const $btn = $(this);
-    const $wrap = $btn.closest('.sw-sync-actions');
-    const $status = $wrap.siblings('.sw-sync-status');
-    setBusy($btn, $status, true);
-
-    try {
-      const res = await $.post(SW_SYNC.ajax, {
-        action: 'sw_sync_order',
-        order_id: $btn.data('order'),
-        nonce: $btn.data('nonce')
-      });
-      if (res && res.success) {
-        if ($status && SW_SYNC && SW_SYNC.i18n) $status.html('<span style="color:#1a7f37;font-weight:600;">' + SW_SYNC.i18n.ok + '</span>');
-        $wrap.remove();
-      } else {
-        console.error('Soundwave sync error:', res);
-        if ($status && SW_SYNC && SW_SYNC.i18n) $status.text(SW_SYNC.i18n.err);
-        setBusy($btn, $status, false);
+  function urlFromRow(r) {
+    // Prefer explicit product_image_full meta
+    var labels = r.querySelectorAll('dt, .wc-item-meta-label, .meta-label');
+    for (var i = 0; i < labels.length; i++) {
+      var t = (labels[i].textContent || '').trim().toLowerCase().replace(':', '');
+      if (t === 'product_image_full') {
+        var dd = labels[i].nextElementSibling; if (!dd) break;
+        var a = dd.querySelector('a'); if (a && a.href) return a.href;
+        var txt = (dd.textContent || '').trim(); if (/^https?:\/\//i.test(txt)) return txt;
       }
-    } catch (err) {
-      console.error('Soundwave sync exception:', err);
-      if ($status && SW_SYNC && SW_SYNC.i18n) $status.text(SW_SYNC.i18n.err);
-      setBusy($btn, $status, false);
     }
-  });
-});
+    // Fallback: any uploads image URL in the row
+    var a2 = r.querySelector('a[href*="/uploads/"]');
+    return a2 ? a2.href : null;
+  }
+  function paint(r, url) {
+    if (!url) return;
+    var box = r.querySelector('.wc-order-item-thumbnail, .wc-order-item-thumbnail__image, td.thumb, .thumb');
+    if (!box) return;
+    var img = box.querySelector('img');
+    if (!img) { img = document.createElement('img'); box.innerHTML = ''; box.appendChild(img); }
+    img.src = url;
+    img.style.cssText = 'display:block;width:48px;height:48px;object-fit:contain;border:1px solid #eee;background:#fff;';
+  }
+  function apply() { rows().forEach(function (r) { paint(r, urlFromRow(r)); }); }
+
+  // Run now, then a few times to catch HPOS React mounts; keep watching mutations.
+  if (document.readyState !== 'loading') apply(); else document.addEventListener('DOMContentLoaded', apply);
+  var tries = 0, t = setInterval(function () { apply(); if (++tries > 30) clearInterval(t); }, 200);
+  new MutationObserver(apply).observe(document.body, { childList: true, subtree: true });
+})();

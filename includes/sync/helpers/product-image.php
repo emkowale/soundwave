@@ -55,7 +55,7 @@ function sw_original_art_from_product($product){
         if (!empty($v)) return $v;
     }
 
-    // 2) Heuristic scan of product meta (ACF/variants)
+    // 2) Heuristic scan of product meta
     $all = $pid ? get_post_meta($pid) : [];
     if (is_array($all)) {
         foreach ($all as $k => $vals){
@@ -87,7 +87,7 @@ function sw_enrich_payload_with_image($payload, $order_id){
     $order = wc_get_order((int)$order_id);
     if (!$order) return $payload;
 
-    // Gather once from any product in the order
+    // ---- ORDER LEVEL: use first product only as a “representative” ----
     $img_url = ''; $art = '';
     foreach ($order->get_items('line_item') as $li){
         $prod = $li->get_product();
@@ -95,20 +95,25 @@ function sw_enrich_payload_with_image($payload, $order_id){
         if (!$art)     $art     = sw_original_art_from_product($prod);
         if ($img_url && $art) break;
     }
-
-    // Add to order meta
     if (empty($payload['meta_data']) || !is_array($payload['meta_data'])) $payload['meta_data'] = [];
     if ($img_url) $payload['meta_data'][] = ['key' => 'product_image_full', 'value' => $img_url];
     if ($art)     $payload['meta_data'][] = ['key' => 'original-art',       'value' => $art];
 
-    // Add to each line_item
+    // ---- LINE ITEM LEVEL: per product ----
     if (!empty($payload['line_items']) && is_array($payload['line_items'])){
-        foreach ($payload['line_items'] as &$li){
-            if (empty($li['meta_data']) || !is_array($li['meta_data'])) $li['meta_data'] = [];
-            if ($img_url) $li['meta_data'][] = ['key' => 'product_image_full', 'value' => $img_url];
-            if ($art)     $li['meta_data'][] = ['key' => 'original-art',       'value' => $art];
+        foreach ($order->get_items('line_item') as $i => $item){
+            if (!isset($payload['line_items'][$i])) continue;
+            $prod = $item->get_product();
+            $li_img = sw_product_image_full_from_product($prod);
+            $li_art = sw_original_art_from_product($prod);
+
+            if (empty($payload['line_items'][$i]['meta_data']) || !is_array($payload['line_items'][$i]['meta_data'])) {
+                $payload['line_items'][$i]['meta_data'] = [];
+            }
+            if ($li_img) $payload['line_items'][$i]['meta_data'][] = ['key' => 'product_image_full', 'value' => $li_img];
+            if ($li_art) $payload['line_items'][$i]['meta_data'][] = ['key' => 'original-art',       'value' => $li_art];
         }
-        unset($li);
     }
+
     return $payload;
 }

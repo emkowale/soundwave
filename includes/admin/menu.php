@@ -11,12 +11,4 @@ add_action('admin_menu', function() {
         'dashicons-update',
         56
     );
-    add_submenu_page(
-        'soundwave-sync',
-        'Soundwave Cheat Sheet',
-        'Cheat Sheet',
-        'manage_woocommerce',
-        'soundwave-cheatsheet',
-        'soundwave_render_cheatsheet_screen'
-    );
 });
