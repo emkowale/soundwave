@@ -6,13 +6,14 @@ defined('ABSPATH') || exit;
  * Stored as an option so you can toggle it from the Soundwave screen.
  * '1' = show, '0' = hide (default).
  */
+
 function sw_debug_enabled_option() {
     $v = get_option('soundwave_debug_enabled', '0'); // default OFF so managers aren't confused
     return $v === '1';
 }
 
 if (defined('SW_INLINE_DEBUG') && SW_INLINE_DEBUG && sw_debug_enabled_option()) {
-    add_action('woocommerce_admin_order_data_after_order_details', function($order){
+/*    add_action('woocommerce_admin_order_data_after_order_details', function($order){
         if (!$order instanceof WC_Order) return;
 
         $fields = [
@@ -41,4 +42,5 @@ if (defined('SW_INLINE_DEBUG') && SW_INLINE_DEBUG && sw_debug_enabled_option()) 
         }
         echo '</div>';
     }, 20);
+*/
 }

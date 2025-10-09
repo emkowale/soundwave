@@ -15,7 +15,6 @@ require_once __DIR__ . '/admin/menu.php';
 require_once __DIR__ . '/admin/screen_sync.php';
 require_once __DIR__ . '/admin/actions.php';
 require_once __DIR__ . '/admin/status_labels.php';
-require_once __DIR__ . '/admin/screen_cheatsheet.php';
 
 /* Sync */
 require_once __DIR__ . '/sync/dispatcher.php';
@@ -33,3 +32,6 @@ require_once __DIR__ . '/sync/record_status.php';
 if ( is_admin() ) {
     require_once plugin_dir_path(__FILE__) . 'class-soundwave-admin-manual-sync.php';
 }
+
+require_once SOUNDWAVE_PATH . 'includes/util/order-meta.php';
+require_once SOUNDWAVE_PATH . 'includes/bootstrap/company-name.php';

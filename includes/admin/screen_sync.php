@@ -5,6 +5,7 @@
  */
 if (!defined('ABSPATH')) exit;
 
+
 if (!function_exists('soundwave_render_sync_screen')) {
   function soundwave_render_sync_screen(){ soundwave_screen_sync(); }
 }
@@ -25,9 +26,10 @@ function soundwave_screen_sync() {
   if (!$cfg_ok){ echo '</div>'; return; }
 
   // Debug banner (modular)
-  require_once __DIR__ . '/debug_banner.php';
-  sw_render_debug_banner($base);
+  //require_once __DIR__ . '/debug_banner.php';
+  //sw_render_debug_banner($base);
 
+  /*
   if (!class_exists('Soundwave_Dest_Client')) require_once dirname(__DIR__).'/class-soundwave-dest-client.php';
   $client = new Soundwave_Dest_Client($base,$ck,$cs);
 
@@ -79,7 +81,7 @@ function soundwave_screen_sync() {
        . '<td>'.$status.'</td>'
        . '<td>'.$action.' <a class="button" href="'.esc_url($edit).'">View</a></td></tr>';
   }
-
   if (empty($orders)) echo '<tr><td colspan="5">No orders found.</td></tr>';
   echo '</tbody></table></div>';
+  */
 }}

@@ -19,6 +19,7 @@ class Soundwave_Admin_Manual_Sync{
     if(!class_exists('Soundwave_Dest_Client')) require_once plugin_dir_path(__FILE__).'class-soundwave-dest-client.php';
     return new Soundwave_Dest_Client($base,$ck,$cs);
   }
+  /*
   public static function render(){
     if(!current_user_can('manage_woocommerce')) wp_die('Insufficient permissions.');
     $client=self::client(); echo '<div class="wrap"><h1>Soundwave — Manual Order Sync</h1>';
@@ -41,6 +42,7 @@ class Soundwave_Admin_Manual_Sync{
     }
     echo '</tbody></table></div>';
   }
+*/
   public static function handle_sync(){
     if(!current_user_can('manage_woocommerce')) wp_die('Insufficient permissions.');
     $id=intval($_POST['order_id']??0); if(!$id||!wp_verify_nonce($_POST['_wpnonce']??'','soundwave_manual_sync_'.$id)) wp_die('Bad request.');

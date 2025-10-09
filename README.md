@@ -1,98 +1,44 @@
-# Soundwave
+# Soundwave — Single-File Source of Truth (v1.4.19)
 
-![WordPress](https://img.shields.io/badge/WordPress-Plugin-blue?logo=wordpress&logoColor=white)
-![WooCommerce](https://img.shields.io/badge/WooCommerce-Sync-purple?logo=woocommerce&logoColor=white)
-![Version](https://img.shields.io/badge/version-1.1.10-brightgreen)
-![License](https://img.shields.io/badge/license-GPL--2.0+-orange)
+**Purpose**  
+Push WooCommerce orders from affiliate/source sites to **thebeartraxs.com** (“hub”) so the hub can fulfill them.
 
----
+## Canonical behavior
+- **Orders column:** Unsynced → **Sync** button; Synced → green text **Synced** (not a button).  
+- **Real‑time reconciliation:** On Orders list, only visible rows are polled on load and ~25s. If the hub returns **404** or `trash`, `_soundwave_synced` and `_soundwave_hub_id` are cleared and the UI flips back to **Sync**.
+- **Validation gate (per line item):** Required fields:
+  - Attributes: **Color**, **Size**, **Print Location**, **Quality**
+  - Custom fields: **company-name**, **original-art**, **production**
+  - **Image** required (pulled from product, variation, item meta, or featured image)
+  If any are missing, sync is blocked; a private order note lists exactly what is missing per line item and the Orders list shows a **Fix errors** link to the order.
+- **Payload:** Each source line item -> one hub item with `product_id=40158`. Meta **keys and order**:
+  1. **Company Name** (site title)
+  2. **SKU** (affiliate/source SKU only — never the hub placeholder)
+  3. **Color**
+  4. **Size**
+  5. **Print Location**
+  6. **Quality**
+  7. **Product Image** (absolute URL)
+  8. **Original Art** (absolute URL)
+  9. **Production** (e.g., “Screen Print”, “DF”, “Embroidery”)
 
-## 📌 Overview
+> Note: Earlier keys `product_image_full` and `original-art` are still accepted as inputs on the source, but the hub **receives** the friendly keys **Product Image** and **Original Art** in the correct display order.
 
-**Soundwave** is a custom WooCommerce plugin that automatically **syncs orders from one WordPress site to another**.  
-It’s designed for affiliate/subscription sites that forward orders to a central hub (e.g., **thebeartraxs.com**) for fulfillment.
+- **Duplicate guard:** `_soundwave_synced = "1"` prevents resending.
+- **Success note:** `Soundwave: synced to hub (hub_id XXXX)`
+- **Failure note:** Includes HTTP code/JSON details and the **missing-by-line-item** list.
 
----
+## Options & meta
+- Option: `soundwave_settings` → `{endpoint, consumer_key, consumer_secret}`
+- Order meta:
+  - `_soundwave_synced` = "1" when synced
+  - `_soundwave_hub_id` = hub order id
+  - `_soundwave_last_response_code`, `_soundwave_last_response_body`, `_soundwave_last_error`
 
-## ✨ Features
+## Updater & Release
+- Built-in updater checks GitHub releases at `emkowale/soundwave`.
+- `release.sh {major|minor|patch}` bumps version and produces `soundwave-vX.Y.Z.zip` with top-level `soundwave/` folder.
 
-- 🔄 **Automatic Order Sync** – new orders push instantly to the destination site  
-- 🖥 **Admin Dashboard** – manage settings & view sync logs in WordPress admin  
-- ✅ **Manual Sync Button** – retry syncs from the order list  
-- 🚫 **Duplicate Protection** – prevents syncing the same order twice  
-- 📦 **Full Order Data** – products, SKUs, images, quantities, descriptions  
-- 👤 **Customer Info** – transfers customer name, email, and address  
-- 💬 **Order Notes & Coupons** – included in the sync  
-- 📧 **Email Triggers** – synced orders trigger destination WooCommerce emails  
-- 🔁 **Retry System** – failed syncs stay queued until successful  
+## Hub helper (optional but recommended)
+To hide the hub placeholder SKU (“thebeartraxs-40158-0”) in the hub’s **admin order item** display, drop `docs/hub-mu-plugin-hide-placeholder-sku.php` into `wp-content/mu-plugins/` on the **hub** site.
 
----
-
-## ⚙️ Installation
-
-1. Download the latest release zip (e.g., `soundwave-v1.1.10.zip`).
-2. Go to **Plugins → Add New → Upload Plugin** in WordPress admin.
-3. Upload and install the zip file.
-4. Click **Activate Plugin**.
-5. The **Soundwave** menu will now appear in your sidebar.
-
----
-
-## 🛠 Configuration
-
-1. Go to **Soundwave → Settings**.  
-2. Enter your **Destination Site URL**.  
-3. Add your **API keys** from the destination site.  
-4. Save changes — you’re ready to sync.  
-
----
-
-## 🚀 Usage
-
-- New WooCommerce orders are synced automatically.  
-- Manual sync is available in **WooCommerce → Orders**.  
-- Synced orders show as **completed** and can’t be retried manually.  
-
----
-
-## 📂 File Structure
-
-soundwave/
-├── soundwave.php # Main plugin loader
-├── includes/
-│ ├── soundwave-sync.php # Order sync logic
-│ ├── soundwave-admin.php # Admin dashboard & settings
-│ ├── email-render-handler.php # Email behavior on sync
-│ └── remove-email-product-image.php # Adjusts WooCommerce email images
-└── assets/
-├── css/ # Admin styles
-└── js/ # Admin scripts
-
-
----
-
-## 📝 Changelog
-
-### v1.1.10
-- Disabled manual sync button for already-synced orders  
-- Fixed duplication issues during sync  
-- Improved handling of SKU, images, quantity, and customer info  
-
-### v1.1.9
-- Added retry system for failed syncs  
-- Added admin sync status feedback  
-- Triggered WooCommerce emails on destination site  
-
----
-
-## 🤝 Contributing
-
-Pull requests are welcome!  
-Fork the repo, create a feature branch, and open a PR.
-
----
-
-## 📄 License
-
-Licensed under the **GPL-2.0+** license.  
-You may freely modify and redistribute under the same terms.

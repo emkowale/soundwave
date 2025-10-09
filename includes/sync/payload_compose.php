@@ -74,6 +74,7 @@ if (!function_exists('sw_compose_payload')) {
             'shipping'       => $shipping,
             'line_items'     => $line_items,
             'shipping_lines' => $shipping_lines,
+            'status'         => 'processing',
             'set_paid'       => $order->is_paid(),
             'meta_data'      => [], // image + other meta injected later
         ];
