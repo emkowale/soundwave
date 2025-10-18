@@ -1,5 +1,7 @@
 ## v1.4.22 — 2025-10-18
 
+- Maintenance release.## v1.4.22 — 2025-10-18
+
 - Maintenance release.## v1.4.21 — 2025-10-18
 
 - Maintenance release.## v1.4.21 — 2025-10-18
