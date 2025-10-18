@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Soundwave release script — all-in-one: bump, tag, zip (soundwave/), push, GitHub release.
-# Requirements: bash, git, zip, rsync; either GitHub CLI `gh` OR env var GITHUB_TOKEN for API fallback.
+# Soundwave release script — local is the source of truth
+# Bump {major|minor|patch}, regenerate CHANGELOG.md, tag, zip (soundwave/), push, GitHub release.
+# Requires: bash, git, zip, rsync, perl, jq; optional: gh (preferred for release)
 
 set -euo pipefail
 
@@ -9,26 +10,13 @@ OWNER="emkowale"
 REPO="soundwave"
 REMOTE_SSH="git@github.com:${OWNER}/${REPO}.git"
 MAIN_FILE="soundwave.php"
-PLUGIN_DIR_NAME="soundwave"                # must be this inside the zip
-ZIP_BASENAME="${REPO}"                     # "soundwave"
-DEFAULT_BRANCH="main"                      # change if you use something else
+PLUGIN_DIR_NAME="soundwave"
+ZIP_BASENAME="${REPO}"
+DEFAULT_BRANCH="main"
 
-# Exclusions when packaging the zip
 RSYNC_EXCLUDES=(
-  ".git"
-  ".github"
-  ".gitignore"
-  ".gitattributes"
-  ".DS_Store"
-  "*.zip"
-  "node_modules"
-  "vendor/*/.git"
-  "tests"
-  "Test"
-  "tmp"
-  "dist"
-  ".idea"
-  ".vscode"
+  ".git" ".github" ".gitignore" ".gitattributes" ".DS_Store" "*.zip"
+  "node_modules" "vendor/*/.git" "tests" "Test" "tmp" "dist" ".idea" ".vscode"
   "release.sh"
 )
 
@@ -39,73 +27,42 @@ ok(){   printf "${C_GRN}✅ %s${C_RESET}\n" "$*"; }
 warn(){ printf "${C_YEL}⚠️  %s${C_RESET}\n" "$*"; }
 die(){  printf "${C_RED}🛑 %s${C_RESET}\n" "$*" >&2; exit 1; }
 
+today(){ date +"%Y-%m-%d"; }
+
 # ==== ARG CHECK ===============================================================
 BUMP_KIND="${1:-}"
-if [[ -z "${BUMP_KIND}" || ! "${BUMP_KIND}" =~ ^(major|minor|patch)$ ]]; then
-  die "Usage: ./release.sh {major|minor|patch}"
+[[ -z "${BUMP_KIND}" || ! "${BUMP_KIND}" =~ ^(major|minor|patch)$ ]] && die "Usage: ./release.sh {major|minor|patch}"
+
+# ==== GIT SETUP (LOCAL WINS) =================================================
+step "Ensuring git repo exists and origin is SSH…"
+[[ -d .git ]] || git init
+git config init.defaultBranch "${DEFAULT_BRANCH}" >/dev/null 2>&1 || true
+if ! git rev-parse --abbrev-ref HEAD >/dev/null 2>&1; then
+  git checkout -b "${DEFAULT_BRANCH}"
 fi
-
-# ==== GUARDS ==================================================================
-[[ -f "${MAIN_FILE}" ]] || die "Could not find ${MAIN_FILE}. Run this from the plugin root."
-
-# ==== GIT SETUP ===============================================================
-step "Checking git repository state…"
-if [[ ! -d ".git" ]]; then
-  warn "No .git directory found. Initializing repo and linking to ${REMOTE_SSH}…"
-  git init
+if ! git remote get-url origin >/dev/null 2>&1; then
   git remote add origin "${REMOTE_SSH}"
-  # Try to pull if remote exists; otherwise continue with empty repo
-  if git ls-remote --exit-code origin &>/dev/null; then
-    # Detect default branch if possible
-    DEFAULT_BRANCH=$(git ls-remote --symref origin HEAD 2>/dev/null | awk -F'/' '/^ref:/ {print $NF}')
-    [[ -z "${DEFAULT_BRANCH}" ]] && DEFAULT_BRANCH="main"
-    git fetch origin
-    if git rev-parse --verify "${DEFAULT_BRANCH}" &>/dev/null; then
-      git checkout "${DEFAULT_BRANCH}"
-    else
-      git checkout -b "${DEFAULT_BRANCH}"
-      git pull origin "${DEFAULT_BRANCH}" || true
-    fi
-  else
-    warn "Remote origin not reachable yet. Proceeding; first push will create ${DEFAULT_BRANCH}."
-    git checkout -b "${DEFAULT_BRANCH}"
-  fi
 else
-  # Ensure remote uses SSH to satisfy your preference
-  CURRENT_REMOTE="$(git remote get-url origin || true)"
-  if [[ -z "${CURRENT_REMOTE}" ]]; then
-    git remote add origin "${REMOTE_SSH}"
-    ok "Added origin ${REMOTE_SSH}"
-  elif [[ "${CURRENT_REMOTE}" != "${REMOTE_SSH}" ]]; then
-    warn "Remote origin is '${CURRENT_REMOTE}', switching to SSH '${REMOTE_SSH}'…"
+  CUR="$(git remote get-url origin)"
+  if [[ "${CUR}" != "${REMOTE_SSH}" ]]; then
+    warn "Switching origin to SSH ${REMOTE_SSH}"
     git remote set-url origin "${REMOTE_SSH}"
   fi
-  # Ensure we're on the default branch
-  CUR_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-  if [[ "${CUR_BRANCH}" != "${DEFAULT_BRANCH}" ]]; then
-    warn "Currently on '${CUR_BRANCH}'. Switching to '${DEFAULT_BRANCH}'…"
-    git checkout "${DEFAULT_BRANCH}" || git checkout -b "${DEFAULT_BRANCH}"
-  fi
-  git pull --rebase origin "${DEFAULT_BRANCH}" || true
 fi
-ok "Git repository ready."
+# No pulls: local is canonical.
 
 # ==== VERSION DISCOVERY =======================================================
 step "Reading current version from ${MAIN_FILE}…"
-# Try to find a 'Version: x.y.z' line in the plugin header first
+[[ -f "${MAIN_FILE}" ]] || die "Missing ${MAIN_FILE}."
 HEADER_VER_LINE="$(grep -E '^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+' -m1 "${MAIN_FILE}" || true)"
 if [[ -n "${HEADER_VER_LINE}" ]]; then
   CURRENT_VERSION="$(sed -E 's/.*Version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/' <<< "${HEADER_VER_LINE}")"
 else
-  # Fallback: look for a define like define('SOUNDWAVE_VERSION','x.y.z');
-  CURRENT_VERSION="$(grep -Eo "SOUNDWAVE_VERSION[\"')[:space:]]*[,']+[[:space:]]*'?[0-9]+\.[0-9]+\.[0-9]+'?" "${MAIN_FILE}" \
-    | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)"
+  CURRENT_VERSION="$(grep -Eo "SOUNDWAVE_VERSION[\"')[:space:]]*[,']+[[:space:]]*'?[0-9]+\.[0-9]+\.[0-9]+'?" "${MAIN_FILE}" | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)"
 fi
-[[ -n "${CURRENT_VERSION}" ]] || die "Could not locate current version in ${MAIN_FILE}."
-
+[[ -n "${CURRENT_VERSION}" ]] || die "Could not find current version in ${MAIN_FILE}."
 ok "Current version: ${CURRENT_VERSION}"
 
-# ==== SEMVER BUMP =============================================================
 IFS='.' read -r MA MI PA <<< "${CURRENT_VERSION}"
 case "${BUMP_KIND}" in
   major) ((MA++)); MI=0; PA=0 ;;
@@ -113,93 +70,131 @@ case "${BUMP_KIND}" in
   patch) ((PA++)) ;;
 esac
 NEW_VERSION="${MA}.${MI}.${PA}"
+RELEASE_TAG="v${NEW_VERSION}"
 ok "Bumping ${BUMP_KIND}: ${CURRENT_VERSION} → ${NEW_VERSION}"
 
-# ==== APPLY VERSION CHANGES ===================================================
-step "Applying version ${NEW_VERSION} to source files…"
+# ==== CHANGELOG (since last tag) =============================================
+step "Generating changelog since last tag…"
+LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+if [[ -n "${LAST_TAG}" ]]; then
+  RANGE="${LAST_TAG}..HEAD"
+else
+  RANGE="--root"
+fi
 
-# 1) Update 'Version: x.y.z' lines in headers (plural-safe)
+# Collect commits (skip merge noise but keep merge titles if you like: remove --no-merges to include)
+NOTES="$(git log ${RANGE} --no-merges --pretty=format:'- %s (%h)')"
+if [[ -z "${NOTES}" ]]; then
+  NOTES="- Maintenance release."
+fi
+
+CHANGELOG_SECTION=$(
+  cat <<EOF
+## ${RELEASE_TAG} — $(today)
+
+${NOTES}
+
+EOF
+)
+
+# Prepend (or create) CHANGELOG.md
+if [[ -f CHANGELOG.md ]]; then
+  TMPCL="$(mktemp)"
+  {
+    echo "${CHANGELOG_SECTION}"
+    cat CHANGELOG.md
+  } > "${TMPCL}"
+  mv "${TMPCL}" CHANGELOG.md
+else
+  printf "# Changelog\n\n%s" "${CHANGELOG_SECTION}" > CHANGELOG.md
+fi
+ok "CHANGELOG.md updated."
+
+# ==== APPLY VERSION CHANGES ===================================================
+step "Applying version ${NEW_VERSION} to source…"
 perl -0777 -pe "s/(\\*\\s*Version:\\s*)[0-9]+\\.[0-9]+\\.[0-9]+/\\1${NEW_VERSION}/g" -i "${MAIN_FILE}"
 
-# 2) Update any define('SOUNDWAVE_VERSION','x.y.z') if present
 if grep -Eq "define\(\s*'SOUNDWAVE_VERSION'\s*,\s*'?[0-9]+\.[0-9]+\.[0-9]+'\s*\)" "${MAIN_FILE}"; then
   perl -0777 -pe "s/(define\\(\\s*'SOUNDWAVE_VERSION'\\s*,\\s*')([0-9]+\\.[0-9]+\\.[0-9]+)('\\s*\\))/\\1${NEW_VERSION}\\3/g" -i "${MAIN_FILE}"
 fi
 
-# 3) Optional: update readme.txt Stable tag if present
 if [[ -f "readme.txt" ]]; then
   if grep -Eq '^[[:space:]]*Stable tag:[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+' readme.txt; then
     perl -0777 -pe "s/(Stable tag:\\s*)[0-9]+\\.[0-9]+\\.[0-9]+/\\1${NEW_VERSION}/g" -i readme.txt
   fi
 fi
 
-# 4) Optional: bump README.md version badges or mentions (soft)
 if [[ -f "README.md" ]]; then
-  perl -0777 -pe "s/\\bv[0-9]+\\.[0-9]+\\.[0-9]+\\b/v${NEW_VERSION}/g" -i README.md || true
+  perl -0777 -pe "s/\\bv[0-9]+\\.[0-9]+\\.[0-9]+\\b/${RELEASE_TAG}/g" -i README.md || true
 fi
 
-# ==== COMMIT & TAG ============================================================
-step "Committing version bump…"
-# Add all (safe for your repo; adjust if needed)
+# ==== COMMIT & TAG (replace if exists) =======================================
+step "Committing version bump + changelog…"
 git add -A
 if ! git diff --cached --quiet; then
-  git commit -m "Release v${NEW_VERSION}"
+  git commit -m "Release ${RELEASE_TAG}"
 else
-  warn "No changes staged; proceeding."
+  warn "No changes to commit."
 fi
 
-# Create tag (idempotent)
-if git rev-parse "v${NEW_VERSION}" >/dev/null 2>&1; then
-  warn "Tag v${NEW_VERSION} already exists; reusing."
-else
-  git tag -a "v${NEW_VERSION}" -m "Soundwave v${NEW_VERSION}"
+# Move local tag if exists; remote will be replaced later
+if git rev-parse "${RELEASE_TAG}" >/dev/null 2>&1; then
+  warn "Local tag ${RELEASE_TAG} exists; re-tagging."
+  git tag -d "${RELEASE_TAG}" >/dev/null 2>&1 || true
 fi
+git tag -a "${RELEASE_TAG}" -m "Soundwave ${RELEASE_TAG}"
 
-step "Pushing branch and tags to origin…"
-git push origin "${DEFAULT_BRANCH}"
-git push origin "v${NEW_VERSION}"
-
-# ==== BUILD ZIP WITH TOP-LEVEL 'soundwave' FOLDER ============================
+# ==== BUILD ZIP WITH TOP-LEVEL 'soundwave' ===================================
 step "Packaging zip with top-level folder '${PLUGIN_DIR_NAME}'…"
 TMPDIR="$(mktemp -d)"
 mkdir -p "${TMPDIR}/${PLUGIN_DIR_NAME}"
 
-# Compose rsync exclude args
 RSYNC_ARGS=()
 for e in "${RSYNC_EXCLUDES[@]}"; do RSYNC_ARGS+=(--exclude "${e}"); done
-
 rsync -a . "${TMPDIR}/${PLUGIN_DIR_NAME}/" "${RSYNC_ARGS[@]}"
 
 (
   cd "${TMPDIR}"
-  ZIP_NAME="${ZIP_BASENAME}-v${NEW_VERSION}.zip"
+  ZIP_NAME="${ZIP_BASENAME}-${RELEASE_TAG}.zip"
   zip -r "${ZIP_NAME}" "${PLUGIN_DIR_NAME}" >/dev/null
-  mv "${ZIP_NAME}" -t "$(pwd -P)/"
 )
-
-FINAL_ZIP="${TMPDIR}/${ZIP_BASENAME}-v${NEW_VERSION}.zip"
+FINAL_ZIP="${TMPDIR}/${ZIP_BASENAME}-${RELEASE_TAG}.zip"
 [[ -f "${FINAL_ZIP}" ]] || die "Zip not created."
-
 ok "Built $(basename "${FINAL_ZIP}")"
 
-# ==== CREATE GITHUB RELEASE & UPLOAD ASSET ===================================
+# ==== PUBLISH (local is canonical) ===========================================
+step "Pushing ${DEFAULT_BRANCH} (force-with-lease)…"
+git branch -M "${DEFAULT_BRANCH}"
+git push -u origin "${DEFAULT_BRANCH}" --force-with-lease
+
+step "Replacing remote tag if exists…"
+git push origin ":refs/tags/${RELEASE_TAG}" >/dev/null 2>&1 || true
+git push origin "${RELEASE_TAG}" --force
+
+# ==== CREATE GITHUB RELEASE (CHANGELOG notes) =================================
 create_release_with_gh() {
   step "Creating GitHub release via gh…"
-  gh release create "v${NEW_VERSION}" "${FINAL_ZIP}" \
-     --title "soundwave v${NEW_VERSION}" \
-     --notes "Automated release of soundwave v${NEW_VERSION}." \
-     --repo "${OWNER}/${REPO}" \
-     --verify-tag || return 1
-  return 0
+  gh release delete "${RELEASE_TAG}" --yes --repo "${OWNER}/${REPO}" >/dev/null 2>&1 || true
+  # Use the freshly generated section as release notes
+  gh release create "${RELEASE_TAG}" "${FINAL_ZIP}" \
+    --title "soundwave ${RELEASE_TAG}" \
+    --notes "${CHANGELOG_SECTION}" \
+    --repo "${OWNER}/${REPO}" \
+    --verify-tag
 }
 
 create_release_with_api() {
   [[ -n "${GITHUB_TOKEN:-}" ]] || { warn "GITHUB_TOKEN not set; cannot use API fallback."; return 1; }
-  step "Creating GitHub release via GitHub API…"
+  step "Creating GitHub release via API…"
   API="https://api.github.com/repos/${OWNER}/${REPO}/releases"
-  UPLOAD="https://uploads.github.com/repos/${OWNER}/${REPO}/releases"
-  DATA=$(jq -n --arg tag "v${NEW_VERSION}" --arg name "soundwave v${NEW_VERSION}" --arg body "Automated release of soundwave v${NEW_VERSION}." '{tag_name:$tag, name:$name, body:$body, draft:false, prerelease:false}')
-  RESP=$(curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" -d "${DATA}" "${API}")
+  # Delete existing release (if any)
+  REL_ID="$(curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" "${API}/tags/${RELEASE_TAG}" 2>/dev/null | jq -r '.id // empty')"
+  if [[ -n "${REL_ID}" ]]; then
+    curl -fsSL -X DELETE -H "Authorization: token ${GITHUB_TOKEN}" "${API}/${REL_ID}" >/dev/null || true
+  fi
+  BODY_JSON=$(jq -n --arg tag "${RELEASE_TAG}" --arg name "soundwave ${RELEASE_TAG}" --arg body "${CHANGELOG_SECTION}" \
+    '{tag_name:$tag, name:$name, body:$body, draft:false, prerelease:false}')
+  RESP=$(curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" -H "Accept: application/vnd.github+json" -d "${BODY_JSON}" "${API}")
   UPLOAD_URL=$(jq -r '.upload_url' <<< "${RESP}" | sed 's/{?name,label}//')
   [[ -n "${UPLOAD_URL}" && "${UPLOAD_URL}" != "null" ]] || return 1
   FNAME="$(basename "${FINAL_ZIP}")"
@@ -213,11 +208,10 @@ if command -v gh >/dev/null 2>&1; then
   create_release_with_gh || die "gh release failed."
   ok "GitHub release created with asset via gh."
 else
-  warn "gh not found; trying API fallback (requires \$GITHUB_TOKEN)…"
-  create_release_with_api || die "GitHub API release failed (set GITHUB_TOKEN or install gh)."
+  warn "gh not found; using API fallback."
+  create_release_with_api || die "GitHub API release failed. Install gh or set GITHUB_TOKEN."
   ok "GitHub release created with asset via API."
 fi
 
-# ==== DONE ====================================================================
-ok "All done! Release v${NEW_VERSION} pushed, tagged, and uploaded."
+ok "All done. ${RELEASE_TAG} pushed (local is source of truth), tagged, and released."
 printf "\nZip: %s\n" "${FINAL_ZIP}"

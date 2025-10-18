@@ -12,7 +12,7 @@ License: GPL2
 
 if ( ! defined('ABSPATH') ) exit;
 
-define('SOUNDWAVE_VERSION', '1.4.20');
+	.4.21');
 define('SOUNDWAVE_DIR', plugin_dir_path(__FILE__));
 define('SOUNDWAVE_URL', plugin_dir_url(__FILE__));
 
