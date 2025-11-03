@@ -1,3 +1,7 @@
+v1.4.23 — 2025-11-03
+
+- chore: initial import
+
 ## v1.4.22 — 2025-10-18
 
 - Maintenance release.## v1.4.22 — 2025-10-18
