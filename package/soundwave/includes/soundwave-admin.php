@@ -3,7 +3,6 @@
  * File: /includes/soundwave-admin.php
  * Purpose: Soundwave menu with Dashboard
  */
-
 if ( ! defined('ABSPATH') ) exit;
 
 /** Top-level + submenus */
