@@ -1,3 +1,7 @@
+v1.4.28 — 2025-11-03
+
+- Maintenance release.
+
 v1.4.27 — 2025-11-03
 
 - Maintenance release.
