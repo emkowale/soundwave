@@ -1,3 +1,18 @@
+v1.4.30 — 2025-11-20
+
+Changed files:
+- artifacts/soundwave-v1.4.29.zip
+- includes/admin.php
+- includes/class-finalizer.php
+- includes/class-soundwave-analytics-guard.php
+- includes/sync/payload_compose.php
+- includes/validator.php
+- package/soundwave/CHANGELOG.md
+- package/soundwave/includes/soundwave-admin.php
+- package/soundwave/release.sh
+- package/soundwave/soundwave.php
+- soundwave.php
+
 v1.4.29 — 2025-11-03
 
 Changed files:
