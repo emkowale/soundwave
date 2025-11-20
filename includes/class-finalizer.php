@@ -33,7 +33,7 @@ class Soundwave_Finalizer {
         // 1) Force status + touch modified times
         $wpdb->query( $wpdb->prepare(
             "UPDATE {$wpdb->posts}
-             SET post_status='wc-processing', post_modified=NOW(), post_modified_gmt=UTC_TIMESTAMP()
+             SET post_status='wc-on-hold', post_modified=NOW(), post_modified_gmt=UTC_TIMESTAMP()
              WHERE ID=%d", $order_id
         ));
 

@@ -4,8 +4,6 @@ if ( ! defined('ABSPATH') ) exit;
 /*
  * File: includes/admin.php
  * Plugin: Soundwave
- * Version: 1.4.22
- * Last Updated: 2025-10-27 09:10 EDT
  */
 
 //
@@ -44,7 +42,9 @@ function soundwave_settings_page(){
         echo '<div class="updated"><p>Settings saved.</p></div>';
     }
 
-    echo '<div class="wrap"><h1>Soundwave Settings</h1><form method="post">';
+    $version = defined('SOUNDWAVE_VERSION') ? SOUNDWAVE_VERSION : 'dev';
+
+    echo '<div class="wrap"><h1>Soundwave Settings <span style="color:#777;font-weight:normal;">v' . esc_html($version) . '</span></h1><form method="post">';
     wp_nonce_field('soundwave_save');
     echo '<table class="form-table">';
     echo '<tr><th><label for="endpoint">Hub Endpoint</label></th><td><input type="url" class="regular-text code" id="endpoint" name="endpoint" value="'.esc_attr($opts['endpoint']).'"></td></tr>';

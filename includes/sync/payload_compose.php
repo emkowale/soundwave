@@ -48,7 +48,7 @@ function sw_compose_payload($order_ref, $ctx = []) {
         'shipping'       => $shipping,
         'line_items'     => $line_items,
         'shipping_lines' => $shipping_lines,
-        'status'         => 'processing',
+        'status'         => 'on-hold',
         'set_paid'       => $order->is_paid(),
         'meta_data'      => [],
     ];

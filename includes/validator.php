@@ -2,18 +2,18 @@
 if ( ! defined('ABSPATH') ) exit;
 
 /*
- * Soundwave Validator — single source of truth
+ * Soundwave Validator — updated for discrete Original Art fields
  * Returns: ['ok'=>bool, 'errors'=>string[]]
  */
 if ( ! function_exists('soundwave_validate_order_required_fields') ) {
 function soundwave_validate_order_required_fields( WC_Order $order ): array {
     $errors = [];
 
-    // Prefer using the shared helper if available.
+    // Helper to pull first non-empty value from candidate keys
     $first = function(array $map, array $cands){
         if ( function_exists('soundwave_first_value_from_candidates') ) {
             $val = soundwave_first_value_from_candidates($map, $cands);
-            return is_scalar($val) ? (string)$val : ( $val === null ? '' : (string)$val );
+            return is_scalar($val) ? (string)$val : ($val === null ? '' : (string)$val);
         }
         foreach ($cands as $k) {
             foreach ([$k, strtolower($k), strtoupper($k)] as $ck) {
@@ -27,15 +27,7 @@ function soundwave_validate_order_required_fields( WC_Order $order ): array {
         return '';
     };
 
-    $slugify = function($s){
-        $s = is_string($s) ? $s : '';
-        $s = wp_strip_all_tags($s);
-        $s = strtolower(trim($s));
-        $s = preg_replace('/[^a-z0-9]+/','_', $s);
-        return trim($s, '_');
-    };
-
-    // Canonical candidate maps (case-insensitive)
+    // Canonical candidate maps
     $C = [
         'color'   => ['attribute_pa_color','pa_color','attribute_color','color','bb_color','variation_color'],
         'size'    => ['attribute_pa_size','pa_size','attribute_size','size','bb_size','variation_size'],
@@ -44,8 +36,16 @@ function soundwave_validate_order_required_fields( WC_Order $order ): array {
         'site'    => ['_site_slug','site_slug','Site Slug'],
         'prod'    => ['_production','production','Production'],
         'loc'     => ['_print_location','print_location','Print Location'],
-        // Image requirement removed — we rely on line-item images (Variation Image URL / Product Image) and do not validate product-level field anymore.
-        // 'img'  => ['_product_image_url','product_image_url','Product Image URL'],
+    ];
+
+    // Map of location substrings → required Original Art field name
+    $ART_MAP = [
+        'front'        => 'Original Art Front',
+        'back'         => 'Original Art Back',
+        'left sleeve'  => 'Original Art Left Sleeve',
+        'right sleeve' => 'Original Art Right Sleeve',
+        'left chest'   => 'Original Art Left Chest',
+        'right chest'  => 'Original Art Right Chest',
     ];
 
     $i = 0;
@@ -53,40 +53,42 @@ function soundwave_validate_order_required_fields( WC_Order $order ): array {
         if ( ! ($item instanceof WC_Order_Item_Product) ) continue;
         $i++;
 
-        // Build a flat meta/attr map for this line
+        // Build flattened map of all meta + attributes
         $map = [];
         foreach ($item->get_meta_data() as $m){
             $d = $m->get_data();
             $map[(string)$d['key']] = $d['value'];
         }
+
         if ($vid = (int)$item->get_variation_id()) {
             if ($v = wc_get_product($vid)) {
                 foreach ((array)$v->get_attributes() as $tax => $val) {
-                    $map['attribute_'.$tax] = $val; $map[$tax] = $val;
-                }
-            }
-        }
-        if ($p = $item->get_product()) {
-            foreach ($p->get_meta_data() as $m){
-                $d = $m->get_data(); if (!isset($map[$d['key']])) $map[$d['key']] = $d['value'];
-            }
-            if ($pid = $p->get_parent_id()) {
-                $parent = wc_get_product($pid);
-                if ($parent) {
-                    foreach ($parent->get_meta_data() as $m){
-                        $d = $m->get_data(); if (!isset($map[$d['key']])) $map[$d['key']] = $d['value'];
-                    }
+                    $map['attribute_'.$tax] = $val;
+                    $map[$tax] = $val;
                 }
             }
         }
 
-        // Variation attrs first; only fall back to meta if missing.
+        if ($p = $item->get_product()) {
+            foreach ($p->get_meta_data() as $m){
+                $d = $m->get_data();
+                if (!isset($map[$d['key']])) $map[$d['key']] = $d['value'];
+            }
+            if ($parent = wc_get_product($p->get_parent_id())) {
+                foreach ($parent->get_meta_data() as $m){
+                    $d = $m->get_data();
+                    if (!isset($map[$d['key']])) $map[$d['key']] = $d['value'];
+                }
+            }
+        }
+
+        // Color / Size (required)
         $color = $first($map, $C['color']);
         $size  = $first($map, $C['size']);
         if ($color === '') $errors[] = "Item #{$i}: Color not selected";
         if ($size  === '') $errors[] = "Item #{$i}: Size not selected";
 
-        // Product-level custom fields (image check removed)
+        // Product-level custom fields
         $vendor  = $first($map, $C['vendor']);
         $company = $first($map, $C['company']);
         $site    = $first($map, $C['site']);
@@ -99,16 +101,20 @@ function soundwave_validate_order_required_fields( WC_Order $order ): array {
         if ($prod    === '') $errors[] = "Item #{$i}: Production not in Custom Fields";
         if ($loc     === '') $errors[] = "Item #{$i}: Print Location not in Custom Fields";
 
-        // Original Art {Print Location}
-        $origCands = ['_original_art','original_art','Original Art'];
+        // ORIGINAL ART VALIDATION — new logic
         if ($loc !== '') {
-            $ls = $slugify($loc);
-            array_unshift($origCands, "_original_art_{$ls}", "original_art_{$ls}", "Original Art {$loc}");
-        }
-        $orig = $first($map, $origCands);
-        if ($orig === '') {
-            $noteLoc = $loc !== '' ? " {$loc}" : '';
-            $errors[] = "Item #{$i}: Original Art{$noteLoc} not in Custom Fields";
+            $locLower = strtolower($loc);
+
+            // For each defined area, check if location contains substring
+            foreach ($ART_MAP as $needle => $label) {
+                if (strpos($locLower, $needle) !== false) {
+                    // This location requires this Original Art field
+                    $art = $first($map, [$label]);
+                    if ($art === '') {
+                        $errors[] = "Item #{$i}: {$label} not in Custom Fields";
+                    }
+                }
+            }
         }
     }
 
