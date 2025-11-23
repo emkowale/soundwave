@@ -101,6 +101,8 @@ function soundwave_sender_request(int $order_id, WC_Order $order, array $payload
     }
 
     $hub_id = ($is_json && isset($data['id'])) ? (string)$data['id'] : '';
+    $aff_id = (string) $order->get_id();
+    update_post_meta($order_id,'_affiliate_meta_id',$aff_id);
     update_post_meta($order_id,'_soundwave_synced','1');
     update_post_meta($order_id,'_soundwave_last_error','');
     update_post_meta($order_id,'_soundwave_last_response_code',$status);

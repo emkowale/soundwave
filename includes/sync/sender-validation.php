@@ -2,6 +2,9 @@
 if ( ! defined('ABSPATH') ) exit;
 
 function soundwave_sender_validate_order(int $order_id, WC_Order $order){
+    if ($order->get_status() === 'trash') {
+        return new WP_Error('order_trashed','Order is in trash and cannot sync.');
+    }
     if ( ! function_exists('soundwave_validate_order_required_fields') ) return null;
 
     $vr   = soundwave_validate_order_required_fields( $order );

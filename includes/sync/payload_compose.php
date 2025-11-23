@@ -49,8 +49,14 @@ function sw_compose_payload($order_ref, $ctx = []) {
         'line_items'     => $line_items,
         'shipping_lines' => $shipping_lines,
         'status'         => 'on-hold',
-        'set_paid'       => $order->is_paid(),
-        'meta_data'      => [],
+        // Force unpaid so hub lands in On Hold regardless of local status
+        'set_paid'       => false,
+        'meta_data'      => [
+            [
+                'key'   => '_affiliate_meta_id',
+                'value' => (string) $order->get_id(),
+            ],
+        ],
     ];
 
     if (function_exists('sw_payload_overrides_paid'))

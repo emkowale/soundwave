@@ -38,16 +38,28 @@ add_action('admin_print_footer_scripts', function(){
             e.preventDefault();
             var $btn=$(this), oid=$btn.data('order-id'), nonce=$btn.data('nonce');
             var $cell = $('.sw-cell-simple[data-order-id="'+oid+'"]');
+            var $spin = $cell.find('.sw-sync-spin');
             $btn.prop('disabled', true).text('Syncing…');
+            if($spin.length){ $spin.addClass('is-active').show(); }
             $.post(ajaxurl, {action:'soundwave_sync_order', order_id: oid, _ajax_nonce: nonce})
             .done(function(res){
                 if (res && res.success) {
                     $cell.attr('data-synced','1').empty().append('<span class="sw-ok">Synced</span>');
                 } else {
                     $btn.prop('disabled', false).text('Sync');
+                    if($spin.length){ $spin.removeClass('is-active').hide(); }
+                    if(res && res.data && res.data.order_id){
+                        var url = $cell.find('.sw-fix').attr('href') || ('post.php?post='+res.data.order_id+'&action=edit');
+                        if(!$cell.find('.sw-fix').length){
+                            $cell.append('<a class="button sw-fix" href="'+url+'">Fix Errors</a>');
+                        }
+                    }
                 }
             })
-            .fail(function(){ $btn.prop('disabled', false).text('Sync'); });
+            .fail(function(){
+                $btn.prop('disabled', false).text('Sync');
+                if($spin.length){ $spin.removeClass('is-active').hide(); }
+            });
         });
 
         $(function(){
@@ -65,7 +77,7 @@ add_action('admin_print_footer_scripts', function(){
                     Object.keys(results).forEach(function(oid){
                         var r = (results[oid] && typeof results[oid] === 'object') ? results[oid] : {};
                         var status = (r.status || (r.data && r.data.status)) || '';
-                        if (String(status) === 'stale' || String(status) === 'missing') {
+                        if (String(status) === 'trashed' || String(status) === 'missing') {
                             var $cell = $('.sw-cell-simple[data-order-id="'+oid+'"]');
                             if(!$cell.length) return;
                             $.post(ajaxurl, {action:'soundwave_mark_unsynced', order_id: oid})

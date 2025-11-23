@@ -3,26 +3,21 @@ if ( ! defined('ABSPATH') ) exit;
 
 require_once SOUNDWAVE_DIR . 'includes/sync/sender.php'; // for soundwave_send_to_hub()
 
-/**
- * Small internal helper: GET a Hub Woo REST path with settings auth.
- * Returns array [ 'code' => int, 'body' => mixed|null, 'raw' => string|null ]
- */
 if ( ! function_exists('soundwave_hub_api_get') ) {
     function soundwave_hub_api_get( string $path ) : array {
-        $settings = get_option('soundwave_settings', []);
-        $endpoint = isset($settings['api_endpoint']) ? rtrim((string)$settings['api_endpoint'], "/") : '';
-        $ck       = isset($settings['api_key'])      ? (string)$settings['api_key']      : '';
-        $cs       = isset($settings['api_secret'])   ? (string)$settings['api_secret']   : '';
+        $settings = function_exists('soundwave_get_settings') ? soundwave_get_settings() : get_option('soundwave_settings', []);
+        $endpoint = isset($settings['endpoint']) ? rtrim((string)$settings['endpoint'], "/") : rtrim((string)($settings['api_endpoint'] ?? ''), '/');
+        $ck       = isset($settings['consumer_key'])    ? (string)$settings['consumer_key']    : ((string)($settings['api_key'] ?? ''));
+        $cs       = isset($settings['consumer_secret']) ? (string)$settings['consumer_secret'] : ((string)($settings['api_secret'] ?? ''));
         if ($endpoint === '' || $ck === '' || $cs === '') {
             return ['code'=>0,'body'=>null,'raw'=>null];
         }
 
-        // Build wc/v3 absolute URL safely
-        // Allow both full wc/v3 endpoints or bare site URL; normalize to /wp-json/wc/v3
-        if (preg_match('~/wp-json/wc/v\d+~', $endpoint)) {
-            $base = $endpoint;
+        // Normalize base to /wp-json/wc/v#/ without trailing /orders
+        if (preg_match('~(.*/wp-json/wc/v\\d+)(?:/orders)?$~', $endpoint, $m)) {
+            $base = rtrim($m[1], '/');
         } else {
-            $base = $endpoint . '/wp-json/wc/v3';
+            $base = rtrim($endpoint, '/') . '/wp-json/wc/v3';
         }
         $url = $base . '/' . ltrim($path, '/');
 
@@ -45,16 +40,9 @@ if ( ! function_exists('soundwave_hub_api_get') ) {
     }
 }
 
-/**
- * Derive hub order state for a local order:
- * - If no _soundwave_hub_id, return 'unsynced'
- * - 200 + status == 'trash'   => 'trashed'
- * - 200 + status != 'trash'   => 'synced'
- * - 404                       => 'missing'
- * - else                      => 'error'
- */
 if ( ! function_exists('soundwave_hub_order_state') ) {
     function soundwave_hub_order_state( int $order_id ) : array {
+        $aff_local = (string) get_post_meta($order_id, '_affiliate_meta_id', true);
         $hub_id = (int) get_post_meta($order_id, '_soundwave_hub_id', true);
         if ( ! $hub_id ) {
             return ['status'=>'unsynced','hub_id'=>0];
@@ -64,6 +52,21 @@ if ( ! function_exists('soundwave_hub_order_state') ) {
             $status = (string)($r['body']['status'] ?? '');
             if (strtolower($status) === 'trash') {
                 return ['status'=>'trashed','hub_id'=>$hub_id];
+            }
+            // If affiliate id is set locally, prefer to compare; otherwise treat as synced
+            if ($aff_local !== '') {
+                $meta = isset($r['body']['meta_data']) && is_array($r['body']['meta_data']) ? $r['body']['meta_data'] : [];
+                $aff_remote = '';
+                foreach ($meta as $m){
+                    if (isset($m['key']) && $m['key']==='_affiliate_meta_id' && isset($m['value'])){
+                        $aff_remote = (string)$m['value']; break;
+                    }
+                }
+                if ($aff_remote !== '' && $aff_remote === $aff_local) {
+                    return ['status'=>'synced','hub_id'=>$hub_id];
+                }
+                // No match: assume still synced but warn
+                return ['status'=>'synced','hub_id'=>$hub_id,'detail'=>'affiliate_meta_id_mismatch'];
             }
             return ['status'=>'synced','hub_id'=>$hub_id];
         }
@@ -88,6 +91,10 @@ add_action('wp_ajax_soundwave_sync_order', function () {
 
         $order = wc_get_order($order_id);
         if ( ! $order ) wp_send_json_error(['code'=>'not_found','message'=>'Order not found']);
+
+        if ($order->get_status() === 'trash') {
+            wp_send_json_error(['code'=>'order_trashed','message'=>'Order is in trash and cannot sync.']);
+        }
 
         // Record that a manual sync was attempted (drives "Fix Order" visibility)
         update_post_meta( $order_id, '_soundwave_last_attempt', time() );

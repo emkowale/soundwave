@@ -2,10 +2,11 @@
 if ( ! defined('ABSPATH') ) exit;
 
 function soundwave_sw_is_synced($order_id){
+    $aff       = get_post_meta($order_id, '_affiliate_meta_id', true);
     $is_synced = get_post_meta($order_id, '_soundwave_synced', true);
     $hub_id    = get_post_meta($order_id, '_soundwave_hub_id', true);
     $last_code = (int) get_post_meta($order_id, '_soundwave_last_response_code', true);
-    return (string)$is_synced === '1' && !empty($hub_id) && $last_code >= 200 && $last_code < 300;
+    return $aff !== '' && (string)$is_synced === '1' && !empty($hub_id) && $last_code >= 200 && $last_code < 300;
 }
 function soundwave_sw_last_error($order_id){
     return (string) get_post_meta($order_id, '_soundwave_last_error', true);
@@ -28,9 +29,10 @@ function soundwave_render_simple_cell($order_id){
         echo '<span class="sw-ok">Synced</span>';
     } else {
         echo '<button type="button" class="button sw-sync" data-order-id="'.esc_attr($order_id).'" data-nonce="'.esc_attr($nonce).'">Sync</button>';
+        echo '<span class="spinner sw-sync-spin" style="float:none;margin:0 6px 0 6px;display:none;"></span>';
         if ( $attempt && ! empty($last_err) ) {
             $url = soundwave_sw_edit_url($order_id);
-            echo '<a class="button sw-fix" href="'.esc_url($url).'" aria-label="Fix Order">Fix Order</a>';
+            echo '<a class="button sw-fix" href="'.esc_url($url).'" aria-label="Fix Errors">Fix Errors</a>';
         }
     }
     echo '</div>';
