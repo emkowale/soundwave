@@ -147,4 +147,6 @@ else
   warn "gh not installed; skipped GitHub release"
 fi
 
+rm -rf package
+
 printf "${C2}🎉 Done: artifacts/${ZIP}${C0}\n"
