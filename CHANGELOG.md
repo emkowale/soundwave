@@ -1,3 +1,15 @@
+v1.4.32 — 2025-11-22
+
+Changed files:
+- artifacts/soundwave-v1.4.31.zip
+- includes/sync/admin-list-assets.php
+- includes/sync/admin-list-helpers.php
+- includes/sync/ajax-orders.php
+- includes/sync/payload_compose.php
+- includes/sync/sender-request.php
+- includes/sync/sender-validation.php
+- soundwave.php
+
 v1.4.31 — 2025-11-22
 
 Changed files:
