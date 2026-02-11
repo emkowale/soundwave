@@ -1,3 +1,13 @@
+v1.4.34 — 2026-02-11
+
+Changed files:
+- artifacts/soundwave-v1.4.33.zip
+- includes/class-finalizer.php
+- includes/sync/auto.php
+- includes/sync/payload_compose.php
+- includes/sync/payload_helpers.php
+- soundwave.php
+
 v1.4.33 — 2026-02-05
 
 Changed files:
