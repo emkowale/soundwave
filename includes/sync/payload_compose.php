@@ -43,20 +43,28 @@ function sw_compose_payload($order_ref, $ctx = []) {
         ];
     }
 
+    $is_paid = false;
+    if (method_exists($order, 'is_paid') && $order->is_paid()) $is_paid = true;
+    if (!$is_paid && method_exists($order, 'get_date_paid') && $order->get_date_paid()) $is_paid = true;
+
+    $meta_data = [
+        [
+            'key'   => '_affiliate_meta_id',
+            'value' => (string) $order->get_id(),
+        ],
+    ];
+    if (function_exists('swp_extract_coupon_meta')) {
+        $meta_data = array_merge($meta_data, swp_extract_coupon_meta($order));
+    }
+
     $payload = [
         'billing'        => $billing,
         'shipping'       => $shipping,
         'line_items'     => $line_items,
         'shipping_lines' => $shipping_lines,
-        'status'         => 'on-hold',
-        // Force unpaid so hub lands in On Hold regardless of local status
-        'set_paid'       => false,
-        'meta_data'      => [
-            [
-                'key'   => '_affiliate_meta_id',
-                'value' => (string) $order->get_id(),
-            ],
-        ],
+        'status'         => $is_paid ? 'processing' : 'on-hold',
+        'set_paid'       => $is_paid,
+        'meta_data'      => $meta_data,
     ];
 
     if (function_exists('sw_payload_overrides_paid'))

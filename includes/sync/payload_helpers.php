@@ -77,3 +77,37 @@ function swp_get_first(array $map,array $cands) {
             return null;
         });
 }}
+
+if (!function_exists('swp_extract_coupon_meta')) {
+function swp_extract_coupon_meta(WC_Order $o) {
+    $rows = [];
+    foreach ($o->get_items('coupon') as $item) {
+        if (!($item instanceof WC_Order_Item_Coupon)) continue;
+
+        $code = trim((string) $item->get_code());
+        if ($code === '') continue;
+
+        $rows[] = [
+            'code'         => $code,
+            'discount'     => wc_format_decimal((float) $item->get_discount(), 2),
+            'discount_tax' => wc_format_decimal((float) $item->get_discount_tax(), 2),
+        ];
+    }
+
+    if (empty($rows)) return [];
+
+    $codes = array_values(array_unique(array_map(function($r){
+        return (string) ($r['code'] ?? '');
+    }, $rows)));
+    $codes = array_values(array_filter($codes, function($v){
+        return trim((string)$v) !== '';
+    }));
+
+    return [
+        ['key' => 'Affiliate Coupon Codes',   'value' => implode(', ', $codes)],
+        ['key' => 'Affiliate Coupon Count',   'value' => (string) count($rows)],
+        ['key' => 'Affiliate Discount Total', 'value' => wc_format_decimal((float) $o->get_discount_total(), 2)],
+        ['key' => 'Affiliate Discount Tax',   'value' => wc_format_decimal((float) $o->get_discount_tax(), 2)],
+        ['key' => 'Affiliate Coupon Details', 'value' => wp_json_encode($rows)],
+    ];
+}}

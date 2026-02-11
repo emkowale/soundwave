@@ -20,6 +20,17 @@ class Soundwave_Finalizer {
     }
 
     /**
+     * Paid detection for fulfillment routing.
+     */
+    protected static function is_paid_order($order_id){
+        $order = wc_get_order((int)$order_id);
+        if (!$order) return false;
+        if (method_exists($order, 'is_paid') && $order->is_paid()) return true;
+        if (method_exists($order, 'get_date_paid') && $order->get_date_paid()) return true;
+        return false;
+    }
+
+    /**
      * Main entry: fix order meta, line items, totals, and timestamps.
      *
      * @param int $order_id
@@ -30,23 +41,28 @@ class Soundwave_Finalizer {
         $order_id = (int)$order_id;
         if ( ! $order_id ) return;
 
-        // 1) Force status + touch modified times
+        $is_paid = self::is_paid_order($order_id);
+        $target_status = $is_paid ? 'wc-processing' : 'wc-on-hold';
+
+        // 1) Set fulfillment status + touch modified times
         $wpdb->query( $wpdb->prepare(
             "UPDATE {$wpdb->posts}
-             SET post_status='wc-on-hold', post_modified=NOW(), post_modified_gmt=UTC_TIMESTAMP()
-             WHERE ID=%d", $order_id
+             SET post_status=%s, post_modified=NOW(), post_modified_gmt=UTC_TIMESTAMP()
+             WHERE ID=%d", $target_status, $order_id
         ));
 
-        // 2) Ensure _paid_date exists
-        $has_paid = $wpdb->get_var( $wpdb->prepare(
-            "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE post_id=%d AND meta_key='_paid_date'", $order_id
-        ));
-        if ( ! $has_paid ) {
-            $wpdb->insert( $wpdb->postmeta, [
-                'post_id' => $order_id,
-                'meta_key' => '_paid_date',
-                'meta_value' => current_time('mysql', true),
-            ]);
+        // 2) Ensure _paid_date exists only for paid orders
+        if ( $is_paid ) {
+            $has_paid = $wpdb->get_var( $wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE post_id=%d AND meta_key='_paid_date'", $order_id
+            ));
+            if ( ! $has_paid ) {
+                $wpdb->insert( $wpdb->postmeta, [
+                    'post_id' => $order_id,
+                    'meta_key' => '_paid_date',
+                    'meta_value' => current_time('mysql', true),
+                ]);
+            }
         }
 
         // 3) Validate line items (product_id, qty, line_total)
