@@ -1,3 +1,15 @@
+v1.4.35 — 2026-02-22
+
+Changed files:
+- artifacts/soundwave-v1.4.34.zip
+- includes/bootstrap.php
+- includes/sync.php
+- includes/sync/auto.php
+- includes/sync/payload_compose.php
+- includes/sync/sender-request.php
+- includes/sync/setup-status.php
+- soundwave.php
+
 v1.4.34 — 2026-02-11
 
 Changed files:
