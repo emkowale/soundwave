@@ -66,6 +66,10 @@ add_action('woocommerce_order_status_on-hold', function($order_id){
     soundwave_maybe_auto_sync($order_id, 'status_on_hold');
 }, 20);
 
+add_action('woocommerce_order_status_setup', function($order_id){
+    soundwave_maybe_auto_sync($order_id, 'status_setup');
+}, 20);
+
 // Some payment flows skip status hooks or fire them out-of-order; these hooks
 // provide a safe backstop (soundwave_maybe_auto_sync is lock/idempotency guarded).
 add_action('woocommerce_payment_complete', function($order_id){

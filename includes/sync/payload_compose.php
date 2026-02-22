@@ -47,12 +47,37 @@ function sw_compose_payload($order_ref, $ctx = []) {
     if (method_exists($order, 'is_paid') && $order->is_paid()) $is_paid = true;
     if (!$is_paid && method_exists($order, 'get_date_paid') && $order->get_date_paid()) $is_paid = true;
 
+    $status = 'on-hold';
+    $setup_products = [];
+    $setup_summary  = '';
+    if (function_exists('soundwave_setup_first_sale_products')) {
+        $setup_products = soundwave_setup_first_sale_products($order);
+        $should_setup = function_exists('soundwave_setup_should_apply')
+            ? soundwave_setup_should_apply($order, $setup_products)
+            : !empty($setup_products);
+        if ($should_setup) {
+            $status = 'setup';
+            if (function_exists('soundwave_setup_product_summary')) {
+                $setup_summary = soundwave_setup_product_summary($setup_products);
+            }
+        }
+    }
+
     $meta_data = [
         [
             'key'   => '_affiliate_meta_id',
             'value' => (string) $order->get_id(),
         ],
     ];
+    if ($status === 'setup') {
+        $meta_data[] = ['key' => '_soundwave_setup_reason', 'value' => 'first_sale_product'];
+        if (!empty($setup_products)) {
+            $meta_data[] = ['key' => '_soundwave_setup_products', 'value' => wp_json_encode($setup_products)];
+        }
+        if ($setup_summary !== '') {
+            $meta_data[] = ['key' => 'Setup Trigger Products', 'value' => $setup_summary];
+        }
+    }
     if (function_exists('swp_extract_coupon_meta')) {
         $meta_data = array_merge($meta_data, swp_extract_coupon_meta($order));
     }
@@ -62,7 +87,7 @@ function sw_compose_payload($order_ref, $ctx = []) {
         'shipping'       => $shipping,
         'line_items'     => $line_items,
         'shipping_lines' => $shipping_lines,
-        'status'         => $is_paid ? 'processing' : 'on-hold',
+        'status'         => $status,
         'set_paid'       => $is_paid,
         'meta_data'      => $meta_data,
     ];

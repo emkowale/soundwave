@@ -11,6 +11,7 @@ if ( ! defined('ABSPATH') ) exit;
 require_once SOUNDWAVE_DIR . 'includes/utils.php';
 require_once SOUNDWAVE_DIR . 'includes/validator.php';
 require_once SOUNDWAVE_DIR . 'includes/sync/payload.php';
+require_once SOUNDWAVE_DIR . 'includes/sync/setup-status.php';
 
 // Modern compose + overrides (ADDED)
 require_once SOUNDWAVE_DIR . 'includes/sync/payload_compose.php';

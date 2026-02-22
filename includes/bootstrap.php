@@ -29,6 +29,7 @@ $__sync_dir = __DIR__ . '/sync';
 $__files = [
     $__sync_dir . '/dispatcher.php',
     $__sync_dir . '/extract_art.php',
+    $__sync_dir . '/setup-status.php',
     $__sync_dir . '/payload_compose.php',
     $__sync_dir . '/http_send.php',
     $__sync_dir . '/helpers/product-image.php',     // optional helper
