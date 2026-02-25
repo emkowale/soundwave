@@ -4,7 +4,8 @@ if ( ! defined('ABSPATH') ) exit;
 /*
  * Setup status + first-sale routing.
  * First-sale rule uses WooCommerce total_sales:
- * - Compute total quantity in this order per product/variation.
+ * - Compute total quantity in this order per parent product family.
+ * - Variable products are grouped by parent SKU/ID (not by variation SKU/ID).
  * - If total_sales <= order quantity for that same product key, treat as first-time.
  */
 
@@ -106,9 +107,23 @@ function soundwave_setup_subject_product( WC_Order_Item_Product $item ) {
     $variation_id = (int) $item->get_variation_id();
     if ($variation_id > 0) {
         $variation = wc_get_product($variation_id);
+        if ($variation instanceof WC_Product_Variation) {
+            $parent_id = (int) $variation->get_parent_id();
+            if ($parent_id > 0) {
+                $parent = wc_get_product($parent_id);
+                if ($parent instanceof WC_Product) return $parent;
+            }
+        }
         if ($variation instanceof WC_Product) return $variation;
     }
     $product = $item->get_product();
+    if ($product instanceof WC_Product_Variation) {
+        $parent_id = (int) $product->get_parent_id();
+        if ($parent_id > 0) {
+            $parent = wc_get_product($parent_id);
+            if ($parent instanceof WC_Product) return $parent;
+        }
+    }
     return ($product instanceof WC_Product) ? $product : null;
 }}
 
@@ -141,7 +156,7 @@ function soundwave_setup_first_sale_products( WC_Order $order ) : array {
             $rows[$key] = [
                 'product_id'   => $pid,
                 'sku'          => (string) (method_exists($product, 'get_sku') ? $product->get_sku() : ''),
-                'name'         => (string) $item->get_name(),
+                'name'         => (string) (method_exists($product, 'get_name') ? $product->get_name() : $item->get_name()),
                 'qty'          => 0,
                 'total_sales'  => soundwave_setup_product_total_sales($product),
             ];

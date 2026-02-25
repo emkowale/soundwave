@@ -5,10 +5,34 @@ require_once __DIR__.'/sender-validation.php';
 require_once __DIR__.'/sender-build.php';
 require_once __DIR__.'/sender-request.php';
 
+if ( ! function_exists('soundwave_sender_truthy') ) {
+function soundwave_sender_truthy($v): bool {
+    $s = strtolower(trim((string)$v));
+    return in_array($s, ['1','yes','true','on'], true);
+}}
+
+if ( ! function_exists('soundwave_sender_existing_hub_id') ) {
+function soundwave_sender_existing_hub_id(int $order_id): string {
+    foreach (['_soundwave_hub_id', '_soundwave_dest_order_id', '_hub_order_id'] as $k) {
+        $v = trim((string) get_post_meta($order_id, $k, true));
+        if ($v !== '' && (int)$v > 0) return $v;
+    }
+    return '';
+}}
+
 if ( ! function_exists('soundwave_send_to_hub') ) {
 function soundwave_send_to_hub( int $order_id ) {
     $order = wc_get_order( $order_id );
     if ( ! $order ) return new WP_Error('order_not_found', 'Order not found.');
+
+    $allow_resend = (bool) apply_filters('soundwave_allow_resend_synced_order', false, $order_id, $order);
+    if ( ! $allow_resend ) {
+        $synced = soundwave_sender_truthy(get_post_meta($order_id, '_soundwave_synced', true));
+        $hub_id = soundwave_sender_existing_hub_id($order_id);
+        if ($synced && $hub_id !== '') {
+            return ['ok'=>true,'status'=>200,'hub_id'=>$hub_id,'skipped'=>true,'message'=>'Already synced'];
+        }
+    }
 
     $validation = soundwave_sender_validate_order($order_id, $order);
     if ( is_wp_error($validation) ) return $validation;
