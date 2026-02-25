@@ -1,3 +1,12 @@
+v1.4.41 — 2026-02-25
+
+Changed files:
+- artifacts/soundwave-v1.4.37.zip
+- includes/sync/recovery-resync.php
+- includes/sync/sender.php
+- includes/sync/setup-status.php
+- soundwave.php
+
 v1.4.37 — 2026-02-25
 
 Changed files:
