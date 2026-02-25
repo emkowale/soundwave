@@ -23,6 +23,7 @@ require_once SOUNDWAVE_DIR . 'includes/sync/admin-list.php';
 
 // Sender must load AFTER builders so it prefers sw_compose_payload()
 require_once SOUNDWAVE_DIR . 'includes/sync/sender.php';
+require_once SOUNDWAVE_DIR . 'includes/sync/recovery-resync.php';
 
 require_once SOUNDWAVE_DIR . 'includes/sync/ajax-orders.php';
 require_once SOUNDWAVE_DIR . 'includes/sync/ajax-settings.php';

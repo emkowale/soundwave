@@ -40,6 +40,18 @@ function sw_http_send($payload, $ctx = []) {
         );
     }
 
+    if (isset($payload['status'])) {
+        $status = strtolower(trim((string)$payload['status']));
+        if ($status === 'on_hold') $status = 'on-hold';
+
+        // Keep custom/local statuses off the Hub REST API.
+        if ($status === 'setup' || $status === 'processing') {
+            $status = 'on-hold';
+        }
+
+        if ($status !== '') $payload['status'] = $status;
+    }
+
     // JSON encode
     $json = wp_json_encode($payload);
     if ($json === false || $json === null) {

@@ -8,6 +8,12 @@ function soundwave_sender_status_normalize($status): string {
     return $s;
 }}
 
+if ( ! function_exists('soundwave_sender_status_is_local_only') ) {
+function soundwave_sender_status_is_local_only($status): bool {
+    $s = soundwave_sender_status_normalize($status);
+    return ($s === 'setup');
+}}
+
 if ( ! function_exists('soundwave_sender_request_curl_json') ) {
 function soundwave_sender_request_curl_json(string $method, string $url, array $body, string $ck, string $cs): array {
     $ch = curl_init($url);
@@ -72,10 +78,11 @@ function soundwave_sender_request(int $order_id, WC_Order $order, array $payload
     $set_paid       = !empty($payload['set_paid']);
     $create_status  = $desired_status;
 
-    // Analytics safety:
-    // paid + setup does not trigger payment_complete in Woo REST, so date_paid
-    // can remain empty. Create as on-hold (set_paid path), then force setup.
-    if ($set_paid && $desired_status === 'setup') {
+    // Keep local-only statuses off the Hub API; preserve local setup metadata/notes.
+    if (soundwave_sender_status_is_local_only($desired_status)) {
+        $create_status = 'on-hold';
+    }
+    if ($set_paid && $create_status === 'processing') {
         $create_status = 'on-hold';
     }
     if ($create_status !== '') {
@@ -159,7 +166,7 @@ function soundwave_sender_request(int $order_id, WC_Order $order, array $payload
 
     // Ensure final business status after payment_complete side effects.
     // Example: paid orders may auto-transition to processing/completed.
-    if ($hub_id !== '' && $desired_status !== '') {
+    if ($hub_id !== '' && $desired_status !== '' && !soundwave_sender_status_is_local_only($desired_status)) {
         $remote_status = '';
         if ($is_json && isset($data['status'])) {
             $remote_status = soundwave_sender_status_normalize($data['status']);
