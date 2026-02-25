@@ -1,3 +1,13 @@
+v1.4.37 — 2026-02-25
+
+Changed files:
+- artifacts/soundwave-v1.4.35.zip
+- includes/sync.php
+- includes/sync/http_send.php
+- includes/sync/recovery-resync.php
+- includes/sync/sender-request.php
+- soundwave.php
+
 v1.4.35 — 2026-02-22
 
 Changed files:
