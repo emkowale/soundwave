@@ -1,3 +1,9 @@
+v1.5.2 — 2026-09-08
+
+Changed files:
+- includes/finalizer-bootstrap.php
+- soundwave.php
+
 v1.5.1 — 2026-09-08
 
 Changed files:
