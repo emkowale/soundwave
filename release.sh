@@ -59,8 +59,8 @@ ver_ge(){ printf '%s\n%s\n' "$1" "$2" | sort -V -r | head -n1 | grep -qx "$1"; }
 [[ -n "${latest:-}" && $(ver_ge "$latest" "$BASE" && echo 1 || echo 0) -eq 1 ]] && BASE="$latest"
 
 IFS=. read -r MA MI PA <<<"$BASE"
-case "$BUMP" in major)((MA++));MI=0;PA=0;; minor)((MI++));PA=0;; patch)((PA++));; esac
-NEXT="${MA}.${MI}.${PA}"; while git rev-parse -q --verify "refs/tags/v$NEXT" >/dev/null 2>&1; do ((PA++)); NEXT="${MA}.${MI}.${PA}"; done
+case "$BUMP" in major)((MA+=1));MI=0;PA=0;; minor)((MI+=1));PA=0;; patch)((PA+=1));; esac
+NEXT="${MA}.${MI}.${PA}"; while git rev-parse -q --verify "refs/tags/v$NEXT" >/dev/null 2>&1; do ((PA+=1)); NEXT="${MA}.${MI}.${PA}"; done
 ok "Next: v${NEXT}"
 
 # --- Bump Version in main file ------------------------------------------------
