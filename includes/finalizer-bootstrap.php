@@ -23,12 +23,22 @@ function soundwave__truthy($v){
     return ($v !== '' && $v !== '0' && $v !== 'no' && $v !== 'false' && $v !== 'off');
 }
 
+function soundwave__popup_source_waits_for_master($order_id){
+    $order = wc_get_order((int) $order_id);
+    if (!$order || !function_exists('soundwave_popup_manifest_theme_state')) return false;
+
+    $state = soundwave_popup_manifest_theme_state();
+    return !empty($state['is_popup'])
+        && absint($order->get_meta('_soundwave_popup_master_id')) <= 0;
+}
+
 /**
  * When Soundwave sets/updates the synced flag, finalize the order.
  */
 function soundwave__finalize_if_synced($meta_id, $object_id, $meta_key, $_meta_value){
     if ($meta_key !== '_soundwave_synced') return;
     if ( ! soundwave__truthy($_meta_value) ) return;
+    if (soundwave__popup_source_waits_for_master($object_id)) return;
 
     // Safety: only run for shop_order posts
     $post = get_post($object_id);
@@ -50,6 +60,7 @@ add_action('updated_postmeta', 'soundwave__finalize_if_synced', 10, 4);
  * if there’s a custom sync flow somewhere else.
  */
 add_action('soundwave/after_sync', function($order_id){
+    if (soundwave__popup_source_waits_for_master($order_id)) return;
     if ( class_exists('Soundwave_Finalizer') ) {
         Soundwave_Finalizer::finalize_for_shipstation((int)$order_id, 40158);
         $order = wc_get_order((int)$order_id);
