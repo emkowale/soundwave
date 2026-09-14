@@ -1,3 +1,7 @@
+v1.5.4 — 2026-09-14
+
+- Continue tracking accepted production batches after a popup store reopens or is disabled. Stop polling each batch once production is completed.
+
 v1.5.3 — 2026-09-14
 
 - Use existing WooCommerce Consumer Key and Secret for popup closing; remove the extra secret setting. Requires the updated Rumble wc-rumble/v1 endpoint.

@@ -142,12 +142,12 @@ function soundwave_popup_manifest_send(array $payload, array $settings): array {
 }
 
 function soundwave_popup_manifest_run_unlocked(): void {
+  soundwave_popup_manifest_refresh_pending_completions();
   $state = soundwave_popup_manifest_state();
   if (empty($state['site_slug']) || empty($state['closing_timestamp']) || (int) $state['closing_timestamp'] > time()) return;
   $key = 'soundwave_popup_manifest_result_' . md5($state['site_slug'] . '|' . $state['closing_timestamp']);
   $previous = get_option($key, []);
   if (!empty($previous['result']['body']['complete']) && !empty($previous['result']['body']['master_order_id'])) {
-    soundwave_popup_manifest_refresh_completion($previous);
     return;
   }
   $orders = soundwave_popup_manifest_orders($state);
@@ -209,18 +209,35 @@ function soundwave_popup_manifest_run(): void {
 
 function soundwave_popup_manifest_refresh_completion(array $previous): void {
   $master_id = absint($previous['result']['body']['master_order_id']);
+  if (get_option('soundwave_popup_production_completed_' . $master_id)) return;
   $settings = soundwave_get_settings();
   $url = rtrim($settings['endpoint'], '/') . '/' . $master_id;
   if (wp_parse_url($url, PHP_URL_SCHEME) !== 'https') return;
   $response = wp_remote_get($url, ['timeout' => 30, 'redirection' => 0, 'headers' => [
     'Authorization' => 'Basic ' . base64_encode($settings['consumer_key'] . ':' . $settings['consumer_secret']),
   ]]);
-  if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) return;
+  if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+    error_log('Soundwave: could not check production completion for hub order #' . $master_id . '; will retry on the next hourly check.');
+    return;
+  }
   $body = json_decode(wp_remote_retrieve_body($response), true);
   if ((int) ($body['id'] ?? 0) !== $master_id || ($body['status'] ?? '') !== 'completed') return;
   foreach ((array) ($previous['payload']['source_order_ids'] ?? []) as $id) {
     $order = wc_get_order($id);
     if (!$order || (int) get_post_meta($id, '_soundwave_popup_master_id', true) !== $master_id) continue;
     if ($order->get_status() === 'processing') $order->update_status('completed', 'Soundwave: Rumble work order #' . $master_id . ' completed.');
+  }
+  update_option('soundwave_popup_production_completed_' . $master_id, time(), false);
+}
+
+// Check every acknowledged cycle, even if the store has reopened or popup mode is disabled.
+function soundwave_popup_manifest_refresh_pending_completions(): void {
+  global $wpdb;
+  $pattern = $wpdb->esc_like('soundwave_popup_manifest_result_') . '%';
+  $rows = $wpdb->get_col($wpdb->prepare("SELECT option_value FROM {$wpdb->options} WHERE option_name LIKE %s", $pattern));
+  foreach ($rows as $raw) {
+    $previous = maybe_unserialize($raw);
+    if (!is_array($previous) || empty($previous['result']['ok']) || empty($previous['result']['body']['complete']) || empty($previous['result']['body']['master_order_id'])) continue;
+    soundwave_popup_manifest_refresh_completion($previous);
   }
 }
