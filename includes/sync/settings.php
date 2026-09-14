@@ -13,7 +13,7 @@ if ( ! function_exists('soundwave_get_settings_compat') ) {
         if ($ck       === '' && isset($o['api_key']))      $ck       = trim((string)$o['api_key']);
         if ($cs       === '' && isset($o['api_secret']))   $cs       = trim((string)$o['api_secret']);
 
-        return ['endpoint'=>$endpoint,'consumer_key'=>$ck,'consumer_secret'=>$cs,'popup_manifest_secret'=>isset($o['popup_manifest_secret']) ? trim((string)$o['popup_manifest_secret']) : ''];
+        return ['endpoint'=>$endpoint,'consumer_key'=>$ck,'consumer_secret'=>$cs];
     }
 }
 

@@ -72,6 +72,13 @@ function soundwave_popup_manifest_read_live_state(): array {
 }
 
 function soundwave_popup_manifest_state(): array {
+  // Theme settings remain available after the storefront removes its closing banner.
+  $theme = soundwave_popup_manifest_theme_state();
+  if (empty($theme['is_popup'])) return [];
+  if (!empty($theme['closing_timestamp'])) {
+    update_option('soundwave_popup_manifest_state', $theme, false);
+    return $theme;
+  }
   $live = soundwave_popup_manifest_read_live_state();
   if ($live) {
     update_option('soundwave_popup_manifest_state', $live, false);
@@ -88,6 +95,7 @@ function soundwave_popup_manifest_orders(array $state): array {
   $eligible = [];
   foreach ($orders as $order) {
     if (!$order instanceof WC_Order) continue;
+    if ((int) get_post_meta($order->get_id(), '_soundwave_popup_master_id', true) > 0) continue;
     $created = $order->get_date_created();
     if (!$created || $created->getTimestamp() > $close) continue;
     $eligible[] = $order;
@@ -111,7 +119,7 @@ function soundwave_popup_manifest_payload(array $state, array $orders): array {
 
 function soundwave_popup_manifest_endpoint(array $settings): string {
   $endpoint = rtrim((string) ($settings['endpoint'] ?? ''), '/');
-  return preg_replace('~/wp-json/wc/v[0-9]+/orders$~', '/wp-json/rumble/v1/popup-manifest', $endpoint);
+  return preg_replace('~/wp-json/wc/v[0-9]+/orders$~', '/wp-json/wc-rumble/v1/popup-manifest', $endpoint);
 }
 
 function soundwave_popup_manifest_sync_order(WC_Order $order, bool $force = false): void {
@@ -124,21 +132,27 @@ function soundwave_popup_manifest_send(array $payload, array $settings): array {
   $endpoint = soundwave_popup_manifest_endpoint($settings);
   if ($endpoint === '' || strpos($endpoint, '/wp-json/') === false) return ['ok' => false, 'message' => 'Hub endpoint is not configured.'];
   $body_json = wp_json_encode($payload);
-  $secret = (string) ($settings['popup_manifest_secret'] ?? '');
-  if ($secret === '') return ['ok' => false, 'message' => 'Popup Manifest Secret is not configured.'];
-  $response = wp_remote_post($endpoint, ['timeout' => 30, 'headers' => ['Content-Type' => 'application/json', 'Authorization' => 'Basic ' . base64_encode((string) $settings['consumer_key'] . ':' . (string) $settings['consumer_secret']), 'X-Soundwave-Manifest-Signature' => hash_hmac('sha256', $body_json, $secret)], 'body' => $body_json]);
+  if (empty($settings['consumer_key']) || empty($settings['consumer_secret'])) return ['ok' => false, 'message' => 'Hub Consumer Key and Consumer Secret are required.'];
+  if (wp_parse_url($endpoint, PHP_URL_SCHEME) !== 'https') return ['ok' => false, 'message' => 'The Hub endpoint must use HTTPS.'];
+  $response = wp_remote_post($endpoint, ['timeout' => 60, 'redirection' => 0, 'headers' => ['Content-Type' => 'application/json', 'Authorization' => 'Basic ' . base64_encode((string) $settings['consumer_key'] . ':' . (string) $settings['consumer_secret'])], 'body' => $body_json]);
   if (is_wp_error($response)) return ['ok' => false, 'message' => $response->get_error_message()];
   $code = (int) wp_remote_retrieve_response_code($response);
   $body = json_decode((string) wp_remote_retrieve_body($response), true);
   return ['ok' => $code >= 200 && $code < 300, 'code' => $code, 'body' => is_array($body) ? $body : [], 'message' => is_array($body) ? (string) ($body['message'] ?? '') : ''];
 }
 
-function soundwave_popup_manifest_run(): void {
+function soundwave_popup_manifest_run_unlocked(): void {
   $state = soundwave_popup_manifest_state();
   if (empty($state['site_slug']) || empty($state['closing_timestamp']) || (int) $state['closing_timestamp'] > time()) return;
+  $key = 'soundwave_popup_manifest_result_' . md5($state['site_slug'] . '|' . $state['closing_timestamp']);
+  $previous = get_option($key, []);
+  if (!empty($previous['result']['body']['complete']) && !empty($previous['result']['body']['master_order_id'])) {
+    soundwave_popup_manifest_refresh_completion($previous);
+    return;
+  }
   $orders = soundwave_popup_manifest_orders($state);
   if (!$orders) return;
-  foreach ($orders as $order) soundwave_popup_manifest_sync_order($order);
+  // Ask the hub which sources are missing before sending; legacy sync flags may be absent.
   $settings = function_exists('soundwave_get_settings') ? soundwave_get_settings() : [];
   $payload = soundwave_popup_manifest_payload($state, $orders);
   $result = soundwave_popup_manifest_send($payload, $settings);
@@ -155,7 +169,10 @@ function soundwave_popup_manifest_run(): void {
     foreach ($orders as $order) {
       if (!$order instanceof WC_Order || $order->get_status() !== 'processing') continue;
       update_post_meta($order->get_id(), '_soundwave_popup_master_id', $master_id);
-      $order->update_status('completed', 'Soundwave: popup cycle confirmed by Rumble work order #' . $master_id . '.');
+      $order->update_meta_data('_soundwave_popup_master_id', $master_id);
+      $order->update_meta_data('_soundwave_popup_cycle', $state['closing_date']);
+      $order->save();
+      $order->add_order_note('Soundwave: received by Rumble work order #' . $master_id . '; awaiting production completion.');
     }
   }
   if (empty($result['ok'])) error_log('Soundwave popup manifest: ' . ($result['message'] ?: 'Hub did not accept the manifest.'));
@@ -166,3 +183,44 @@ function soundwave_popup_manifest_schedule(): void {
 }
 add_action('init', 'soundwave_popup_manifest_schedule');
 add_action('soundwave_popup_manifest_check', 'soundwave_popup_manifest_run');
+
+// A site update queues one immediate catch-up; regular hourly checks handle retries.
+function soundwave_popup_manifest_after_update(): void {
+  if (get_option('soundwave_popup_recovery_version') === SOUNDWAVE_VERSION) return;
+  if (!wp_next_scheduled('soundwave_popup_manifest_catchup')) {
+    $scheduled = wp_schedule_single_event(time(), 'soundwave_popup_manifest_catchup');
+    if (!$scheduled) return;
+  }
+  update_option('soundwave_popup_recovery_version', SOUNDWAVE_VERSION, false);
+}
+add_action('init', 'soundwave_popup_manifest_after_update', 25);
+add_action('soundwave_popup_manifest_catchup', 'soundwave_popup_manifest_run');
+
+function soundwave_popup_manifest_run(): void {
+  $lock = 'soundwave_popup_transfer_lock';
+  if (!add_option($lock, time(), '', false)) {
+    if ((int) get_option($lock) >= time() - 1800) return;
+    delete_option($lock);
+    if (!add_option($lock, time(), '', false)) return;
+  }
+  try { soundwave_popup_manifest_run_unlocked(); }
+  finally { delete_option($lock); }
+}
+
+function soundwave_popup_manifest_refresh_completion(array $previous): void {
+  $master_id = absint($previous['result']['body']['master_order_id']);
+  $settings = soundwave_get_settings();
+  $url = rtrim($settings['endpoint'], '/') . '/' . $master_id;
+  if (wp_parse_url($url, PHP_URL_SCHEME) !== 'https') return;
+  $response = wp_remote_get($url, ['timeout' => 30, 'redirection' => 0, 'headers' => [
+    'Authorization' => 'Basic ' . base64_encode($settings['consumer_key'] . ':' . $settings['consumer_secret']),
+  ]]);
+  if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) return;
+  $body = json_decode(wp_remote_retrieve_body($response), true);
+  if ((int) ($body['id'] ?? 0) !== $master_id || ($body['status'] ?? '') !== 'completed') return;
+  foreach ((array) ($previous['payload']['source_order_ids'] ?? []) as $id) {
+    $order = wc_get_order($id);
+    if (!$order || (int) get_post_meta($id, '_soundwave_popup_master_id', true) !== $master_id) continue;
+    if ($order->get_status() === 'processing') $order->update_status('completed', 'Soundwave: Rumble work order #' . $master_id . ' completed.');
+  }
+}

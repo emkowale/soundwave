@@ -28,8 +28,7 @@ function soundwave__popup_source_waits_for_master($order_id){
     if (!$order || !function_exists('soundwave_popup_manifest_theme_state')) return false;
 
     $state = soundwave_popup_manifest_theme_state();
-    return !empty($state['is_popup'])
-        && absint($order->get_meta('_soundwave_popup_master_id')) <= 0;
+    return !empty($state['is_popup']);
 }
 
 /**

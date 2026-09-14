@@ -1,3 +1,10 @@
+v1.5.3 — 2026-09-14
+
+- Use existing WooCommerce Consumer Key and Secret for popup closing; remove the extra secret setting. Requires the updated Rumble wc-rumble/v1 endpoint.
+- Read closing dates from theme settings and queue immediate catch-up after updates.
+- Request only missing source orders and lock concurrent closing checks.
+- Keep accepted popup orders in processing until the hub confirms production completion.
+
 v1.5.2 — 2026-09-08
 
 Changed files:

@@ -1,6 +1,6 @@
 <?php
 /*
- * Version: 1.5.2
+ * Version: 1.5.3
 Plugin Name: Soundwave
 Plugin URI: https://github.com/emkowale/soundwave
 Description: Pushes WooCommerce orders from affiliate/source sites to thebeartraxs.com (“hub”) via WooCommerce REST API.
@@ -12,7 +12,7 @@ License: GPL2
 */
 
 if ( ! defined('ABSPATH') ) exit;
-define('SOUNDWAVE_VERSION','1.5.2');
+define('SOUNDWAVE_VERSION','1.5.3');
 define('SOUNDWAVE_DIR', plugin_dir_path(__FILE__));
 define('SOUNDWAVE_URL', plugin_dir_url(__FILE__));
 
@@ -20,6 +20,7 @@ register_deactivation_hook(__FILE__, function(){
     if (function_exists('wp_clear_scheduled_hook')) {
         wp_clear_scheduled_hook('soundwave_resync_unsynced_batch');
         wp_clear_scheduled_hook('soundwave_popup_manifest_check');
+        wp_clear_scheduled_hook('soundwave_popup_manifest_catchup');
     }
 });
 

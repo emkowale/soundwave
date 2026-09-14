@@ -10,7 +10,7 @@ if ( ! function_exists('soundwave_get_settings') ) {
         if ($endpoint === '' && defined('SW_HUB_ENDPOINT')) $endpoint = (string)SW_HUB_ENDPOINT;
         if ($ck       === '' && defined('SW_HUB_KEY'))      $ck       = (string)SW_HUB_KEY;
         if ($cs       === '' && defined('SW_HUB_SECRET'))   $cs       = (string)SW_HUB_SECRET;
-        return ['endpoint'=>$endpoint,'consumer_key'=>$ck,'consumer_secret'=>$cs,'popup_manifest_secret'=>trim((string)($o['popup_manifest_secret'] ?? ''))];
+        return ['endpoint'=>$endpoint,'consumer_key'=>$ck,'consumer_secret'=>$cs];
     }
 }
 
