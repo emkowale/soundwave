@@ -24,6 +24,9 @@ if ( ! function_exists('soundwave_send_to_hub') ) {
 function soundwave_send_to_hub( int $order_id ) {
     $order = wc_get_order( $order_id );
     if ( ! $order ) return new WP_Error('order_not_found', 'Order not found.');
+    if ((int) $order->get_meta('_soundwave_popup_master_id') > 0) {
+        return ['ok' => true, 'skipped' => true, 'message' => 'Already included in a confirmed combined order.'];
+    }
 
     if (function_exists('soundwave_popup_manifest_defer_open_store_order')
         && soundwave_popup_manifest_defer_open_store_order($order)) {

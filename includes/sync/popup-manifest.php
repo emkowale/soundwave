@@ -172,7 +172,7 @@ function soundwave_popup_manifest_run_unlocked(): void {
       $order->update_meta_data('_soundwave_popup_master_id', $master_id);
       $order->update_meta_data('_soundwave_popup_cycle', $state['closing_date']);
       $order->save();
-      $order->add_order_note('Soundwave: received by Rumble work order #' . $master_id . '; awaiting production completion.');
+      $order->update_status('completed', 'Soundwave: transfer confirmed by Rumble combined work order #' . $master_id . '.');
     }
   }
   if (empty($result['ok'])) error_log('Soundwave popup manifest: ' . ($result['message'] ?: 'Hub did not accept the manifest.'));
@@ -209,7 +209,7 @@ function soundwave_popup_manifest_run(): void {
 
 function soundwave_popup_manifest_refresh_completion(array $previous): void {
   $master_id = absint($previous['result']['body']['master_order_id']);
-  if (get_option('soundwave_popup_production_completed_' . $master_id)) return;
+  if (get_option('soundwave_popup_transfer_completed_' . $master_id)) return;
   $settings = soundwave_get_settings();
   $url = rtrim($settings['endpoint'], '/') . '/' . $master_id;
   if (wp_parse_url($url, PHP_URL_SCHEME) !== 'https') return;
@@ -217,17 +217,17 @@ function soundwave_popup_manifest_refresh_completion(array $previous): void {
     'Authorization' => 'Basic ' . base64_encode($settings['consumer_key'] . ':' . $settings['consumer_secret']),
   ]]);
   if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
-    error_log('Soundwave: could not check production completion for hub order #' . $master_id . '; will retry on the next hourly check.');
+    error_log('Soundwave: could not verify the confirmed combined hub order #' . $master_id . '; will retry on the next hourly check.');
     return;
   }
   $body = json_decode(wp_remote_retrieve_body($response), true);
-  if ((int) ($body['id'] ?? 0) !== $master_id || ($body['status'] ?? '') !== 'completed') return;
+  if ((int) ($body['id'] ?? 0) !== $master_id || empty($body['status']) || in_array($body['status'], ['trash', 'cancelled', 'failed'], true)) return;
   foreach ((array) ($previous['payload']['source_order_ids'] ?? []) as $id) {
     $order = wc_get_order($id);
     if (!$order || (int) get_post_meta($id, '_soundwave_popup_master_id', true) !== $master_id) continue;
-    if ($order->get_status() === 'processing') $order->update_status('completed', 'Soundwave: Rumble work order #' . $master_id . ' completed.');
+    if ($order->get_status() === 'processing') $order->update_status('completed', 'Soundwave: transfer confirmed by Rumble combined work order #' . $master_id . '.');
   }
-  update_option('soundwave_popup_production_completed_' . $master_id, time(), false);
+  update_option('soundwave_popup_transfer_completed_' . $master_id, time(), false);
 }
 
 // Check every acknowledged cycle, even if the store has reopened or popup mode is disabled.

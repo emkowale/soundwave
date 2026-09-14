@@ -19,6 +19,8 @@ function soundwave_maybe_auto_sync( $order_id, $context = '' ){
 
     $order = wc_get_order($order_id);
     if (!$order) return;
+    // Confirmed popup transfers must not be sent again by the completed-status hook.
+    if ((int) $order->get_meta('_soundwave_popup_master_id') > 0) return;
     if (function_exists('soundwave_popup_manifest_defer_open_store_order')
         && soundwave_popup_manifest_defer_open_store_order($order)) {
         return ['ok' => true, 'deferred_popup' => true];

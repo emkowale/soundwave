@@ -1,3 +1,8 @@
+v1.5.5 — 2026-09-14
+
+- Complete source customer orders as soon as Rumble confirms their combined order.
+- Catch up previously confirmed batches without waiting for production completion or creating duplicate transfers.
+
 v1.5.4 — 2026-09-14
 
 - Continue tracking accepted production batches after a popup store reopens or is disabled. Stop polling each batch once production is completed.
