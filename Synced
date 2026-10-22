@@ -1,0 +1,4 @@
+includes/sync/admin-list-helpers.php:38:        echo '<span class="sw-ok">synced</span>';
+includes/sync/admin-list-assets.php:27:        .column-soundwave .sw-ok{color:#057a55;font-weight:600;font-size:12px;line-height:1.8}
+includes/sync/admin-list-assets.php:31:            .column-soundwave .sw-ok,
+includes/sync/admin-list-assets.php:47:                    $cell.attr('data-synced','1').empty().append('<span class="sw-ok">synced</span>');

@@ -1,0 +1,99 @@
+<?php
+/*
+ * File: includes/sync/payload_compose.php
+ * Purpose: Main payload builder — delegates helpers & enrichment.
+ */
+if (!defined('ABSPATH')) exit;
+
+require_once __DIR__ . '/line_builder_placeholder.php';
+require_once __DIR__ . '/payload_helpers.php';
+require_once __DIR__ . '/payload_enrich_lineitem.php';
+
+if (!function_exists('sw_compose_payload')) {
+function sw_compose_payload($order_ref, $ctx = []) {
+
+    $order = (is_object($order_ref) && $order_ref instanceof WC_Order)
+        ? $order_ref : wc_get_order((int)$order_ref);
+    if (!$order) return new WP_Error('soundwave_no_order', 'Order not found.');
+
+    // --- Base billing/shipping ---
+    $billing = swp_extract_billing($order);
+    $shipping = swp_extract_shipping($order);
+
+    // --- Line items via placeholder ---
+    if (!function_exists('sw_build_line_items_placeholder'))
+        return new WP_Error('soundwave_missing_builder', 'line_builder_placeholder missing.');
+    $line_items = sw_build_line_items_placeholder($order);
+    if (empty($line_items)) return new WP_Error('soundwave_no_lines', 'No line items composed.');
+
+    // --- Enrich each line ---
+    $i = 0;
+    foreach ($order->get_items('line_item') as $item) {
+        if (!($item instanceof WC_Order_Item_Product)) { $i++; continue; }
+        $line_items[$i] = swp_enrich_line_item($item, $line_items[$i] ?? []);
+        $i++;
+    }
+
+    // --- Shipping lines ---
+    $shipping_lines = [];
+    foreach ($order->get_shipping_methods() as $it) {
+        $shipping_lines[] = [
+            'method_id' => $it->get_method_id(),
+            'total'     => wc_format_decimal($it->get_total(), 2),
+        ];
+    }
+
+    $is_paid = false;
+    if (method_exists($order, 'is_paid') && $order->is_paid()) $is_paid = true;
+    if (!$is_paid && method_exists($order, 'get_date_paid') && $order->get_date_paid()) $is_paid = true;
+
+    $status = 'on-hold';
+    $setup_products = [];
+    $setup_summary  = '';
+    if (function_exists('soundwave_setup_first_sale_products')) {
+        $setup_products = soundwave_setup_first_sale_products($order);
+        $should_setup = function_exists('soundwave_setup_should_apply')
+            ? soundwave_setup_should_apply($order, $setup_products)
+            : !empty($setup_products);
+        if ($should_setup) {
+            $status = 'setup';
+            if (function_exists('soundwave_setup_product_summary')) {
+                $setup_summary = soundwave_setup_product_summary($setup_products);
+            }
+        }
+    }
+
+    $meta_data = [
+        [
+            'key'   => '_affiliate_meta_id',
+            'value' => (string) $order->get_id(),
+        ],
+    ];
+    if ($status === 'setup') {
+        $meta_data[] = ['key' => '_soundwave_setup_reason', 'value' => 'first_sale_product'];
+        if (!empty($setup_products)) {
+            $meta_data[] = ['key' => '_soundwave_setup_products', 'value' => wp_json_encode($setup_products)];
+        }
+        if ($setup_summary !== '') {
+            $meta_data[] = ['key' => 'Setup Trigger Products', 'value' => $setup_summary];
+        }
+    }
+    if (function_exists('swp_extract_coupon_meta')) {
+        $meta_data = array_merge($meta_data, swp_extract_coupon_meta($order));
+    }
+
+    $payload = [
+        'billing'        => $billing,
+        'shipping'       => $shipping,
+        'line_items'     => $line_items,
+        'shipping_lines' => $shipping_lines,
+        'status'         => $status,
+        'set_paid'       => $is_paid,
+        'meta_data'      => $meta_data,
+    ];
+
+    if (function_exists('sw_payload_overrides_paid'))
+        $payload = sw_payload_overrides_paid($payload, $order);
+
+    return $payload;
+}}
